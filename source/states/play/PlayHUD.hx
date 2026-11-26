@@ -19,6 +19,7 @@ class PlayHUD extends FlxSpriteGroup
 	public var songPercent:Float = 0;
 	public var botplaySine:Float = 0;
 	public var scoreTxtTween:FlxTween;
+	var _lastTimeSeconds:Int = -1;
 
 	public function new(bf:Character, dad:Character, songTitle:String, getHealth:Void->Float, isBotplay:Bool)
 	{
@@ -103,16 +104,19 @@ class PlayHUD extends FlxSpriteGroup
 	public function updateTime(songPos:Float, songLength:Float):Void
 	{
 		var curTime:Float = Math.max(0, songPos - ClientPrefs.data.noteOffset);
-		songPercent = (curTime / songLength);
+		songPercent = (songLength > 0) ? (curTime / songLength) : 0;
 
-		var songCalc:Float = (songLength - curTime);
-		if (ClientPrefs.data.timeBarType == 'Time Elapsed') songCalc = curTime;
+		if (ClientPrefs.data.timeBarType == 'Song Name') return;
 
+		var songCalc:Float = (ClientPrefs.data.timeBarType == 'Time Elapsed') ? curTime : (songLength - curTime);
 		var secondsTotal:Int = Math.floor(songCalc / 1000);
 		if (secondsTotal < 0) secondsTotal = 0;
 
-		if (ClientPrefs.data.timeBarType != 'Song Name')
+		if (secondsTotal != _lastTimeSeconds)
+		{
+			_lastTimeSeconds = secondsTotal;
 			timeTxt.text = FlxStringUtil.formatTime(secondsTotal, false);
+		}
 	}
 
 	public function updateBotplay(elapsed:Float):Void
@@ -168,7 +172,9 @@ class PlayHUD extends FlxSpriteGroup
 		);
 		healthBar.percent = (newPercent != null ? newPercent : 0);
 
-		iconP1.animation.curAnim.curFrame = (healthBar.percent < 20) ? 1 : 0;
-		iconP2.animation.curAnim.curFrame = (healthBar.percent > 80) ? 1 : 0;
+		if (iconP1 != null && iconP1.animation.curAnim != null)
+			iconP1.animation.curAnim.curFrame = (healthBar.percent < 20) ? 1 : 0;
+		if (iconP2 != null && iconP2.animation.curAnim != null)
+			iconP2.animation.curAnim.curFrame = (healthBar.percent > 80) ? 1 : 0;
 	}
 }

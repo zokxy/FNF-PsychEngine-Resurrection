@@ -281,8 +281,10 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 
 	public function resizeByRatio(ratio:Float):Void
 	{
-		for (note in notes.members) note.resizeByRatio(ratio);
-		for (note in unspawnNotes) note.resizeByRatio(ratio);
+		for (note in notes.members)
+			if (note != null) note.resizeByRatio(ratio);
+		for (note in unspawnNotes)
+			if (note != null) note.resizeByRatio(ratio);
 	}
 
 	public function spawnUpcoming(songPos:Float, songSpeed:Float, playbackRate:Float, onSpawn:Note->Void):Void
@@ -400,13 +402,13 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 		while (i >= 0)
 		{
 			var daNote:Note = unspawnNotes[i];
-			if (daNote.strumTime - 350 < time)
+			if (daNote != null && daNote.strumTime - 350 < time)
 			{
 				daNote.active = false;
 				daNote.visible = false;
 				daNote.ignoreNote = true;
 				daNote.kill();
-				unspawnNotes.remove(daNote);
+				unspawnNotes.splice(i, 1);
 				daNote.destroy();
 			}
 			--i;
@@ -416,7 +418,7 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 		while (i >= 0)
 		{
 			var daNote:Note = notes.members[i];
-			if (daNote.strumTime - 350 < time)
+			if (daNote != null && daNote.strumTime - 350 < time)
 			{
 				daNote.active = false;
 				daNote.visible = false;
@@ -429,13 +431,20 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 
 	public function killAll():Void
 	{
-		while (notes.length > 0)
+		var i:Int = notes.length - 1;
+		while (i >= 0)
 		{
-			var daNote:Note = notes.members[0];
-			daNote.active = false;
-			daNote.visible = false;
-			invalidate(daNote);
+			var daNote:Note = notes.members[i];
+			if (daNote != null)
+			{
+				daNote.active = false;
+				daNote.visible = false;
+				invalidate(daNote);
+			}
+			--i;
 		}
+		for (n in unspawnNotes)
+			if (n != null) n.destroy();
 		unspawnNotes = [];
 	}
 
@@ -493,7 +502,6 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 				splash.offset.y += (strum.height / lineScale - strum.height) / 2;
 			}
 		}
-		grpNoteSplashes.add(splash);
 	}
 
 	public function strumPlayAnim(isDad:Bool, id:Int, time:Float, ?lineID:Int):Void

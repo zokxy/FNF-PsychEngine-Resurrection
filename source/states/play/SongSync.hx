@@ -59,8 +59,6 @@ class SongSync
 		FlxG.sound.music.onComplete = onComplete;
 		length = FlxG.sound.music.length;
 
-		vocals.play();
-		opponentVocals.play();
 		setTime(Math.max(0, startOnTime - 500) + Conductor.offset, rate);
 
 		if (paused) pause();
@@ -160,11 +158,5 @@ class SongSync
 		}
 		else
 			voc.pause();
-	}
-
-	function checkVocalDrift(voc:FlxSound, musicTime:Float, rate:Float):Void
-	{
-		if (voc != null && voc.playing && musicTime < voc.length && Math.abs(voc.time - musicTime) > 40 * rate)
-			voc.time = musicTime;
 	}
 }

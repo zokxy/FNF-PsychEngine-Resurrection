@@ -156,9 +156,9 @@ class StrumLine
 
 	public function resetAnims():Void
 	{
-		for (note in strums)
+		for (note in strums.members)
 		{
-			if (note.animation.curAnim != null && note.animation.curAnim.name != 'static')
+			if (note != null && note.animation.curAnim != null && note.animation.curAnim.name != 'static')
 			{
 				note.playAnim('static');
 				note.resetAnim = 0;
