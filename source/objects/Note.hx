@@ -55,6 +55,8 @@ class Note extends FlxSprite
 	public var noteData:Int = 0;
 
 	public var mustPress:Bool = false;
+	public var strumLineID:Int = -1;
+	public var lineScale:Float = 1;
 	public var canBeHit:Bool = false;
 	public var tooLate:Bool = false;
 
@@ -540,7 +542,7 @@ class Note extends FlxSprite
 
 	public function clipToStrumNote(myStrum:StrumNote)
 	{
-		var center:Float = myStrum.y + offsetY + Note.swagWidth / 2;
+		var center:Float = myStrum.y + offsetY + (Note.swagWidth * lineScale) / 2;
 		if((mustPress || !ignoreNote) && (wasGoodHit || (prevNote.wasGoodHit && !canBeHit)))
 		{
 			var swagRect:FlxRect = clipRect;

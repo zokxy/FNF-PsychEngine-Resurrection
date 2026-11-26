@@ -33,6 +33,7 @@ class NoteSplash extends FlxSprite
 	public var texture:String;
 	public var config(default, set):NoteSplashConfig;
 	public var babyArrow:StrumNote;
+	public var lineScale:Float = 1;
 	public var noteData:Int = 0;
 
 	public var copyX:Bool = true;

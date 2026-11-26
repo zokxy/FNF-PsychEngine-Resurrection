@@ -20,10 +20,30 @@ class MusicBeatSubstate extends FlxSubState
 
 	private var curDecStep:Float = 0;
 	private var curDecBeat:Float = 0;
+	public var scripts:StateScriptManager;
 	private var controls(get, never):Controls;
 
 	inline function get_controls():Controls
 		return Controls.instance;
+
+	function getScriptName():String
+	{
+		var clsName:String = Type.getClassName(Type.getClass(this));
+		return clsName.substr(clsName.lastIndexOf('.') + 1);
+	}
+
+	function getScriptExtraVars():Map<String, Dynamic>
+		return null;
+
+	override function create()
+	{
+		super.create();
+		if (Std.isOfType(this, CustomFadeTransition)) return;
+		scripts = new StateScriptManager(this, getScriptName(), true, getScriptExtraVars());
+		scripts.load();
+		scripts.call('onCreate');
+		scripts.call('onCreatePost');
+	}
 
 	override function update(elapsed:Float)
 	{
@@ -47,8 +67,11 @@ class MusicBeatSubstate extends FlxSubState
 					rollbackSection();
 			}
 		}
-
+		if (FlxG.keys.justPressed.F5 && scripts != null)
+			scripts.reload();
+		if (scripts != null) scripts.call('onUpdate', [elapsed]);
 		super.update(elapsed);
+		if (scripts != null) scripts.call('onUpdatePost', [elapsed]);
 	}
 
 	private function updateSection():Void
@@ -103,16 +126,27 @@ class MusicBeatSubstate extends FlxSubState
 	{
 		if (curStep % 4 == 0)
 			beatHit();
+		if (scripts != null) scripts.call('onStepHit', [curStep]);
 	}
 
 	public function beatHit():Void
 	{
-		//do literally nothing dumbass
+		if (scripts != null) scripts.call('onBeatHit', [curBeat]);
 	}
 	
 	public function sectionHit():Void
 	{
-		//yep, you guessed it, nothing again, dumbass
+		if (scripts != null) scripts.call('onSectionHit', [curSection]);
+	}
+
+	override function destroy()
+	{
+		if (scripts != null)
+		{
+			scripts.destroy(false);
+			scripts = null;
+		}
+		super.destroy();
 	}
 	
 	function getBeatsOnSection()

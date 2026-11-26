@@ -19,7 +19,7 @@ class ChartingGridSprite extends FlxSprite
 	{
 		super();
 		this.columns = columns;
-		scrollFactor.x = 0;
+		scrollFactor.x = 1;
 		active = false;
 
 		scale.set(ChartingState.GRID_SIZE, ChartingState.GRID_SIZE);
@@ -29,12 +29,12 @@ class ChartingGridSprite extends FlxSprite
 
 		vortexLine = new FlxSprite().makeGraphic(1, 1, FlxColor.WHITE);
 		vortexLine.scale.x = this.width;
-		vortexLine.scrollFactor.x = 0;
+		vortexLine.scrollFactor.x = 1;
 		vortexLine.color = 0xFF660000;
 		vortexLine.updateHitbox();
 
 		stripe = new FlxSprite().makeGraphic(1, 1, FlxColor.WHITE);
-		stripe.scrollFactor.x = 0;
+		stripe.scrollFactor.x = 1;
 		stripe.color = FlxColor.BLACK;
 		updateStripes();
 	}

@@ -30,6 +30,20 @@ typedef SwagSong =
 
 	@:optional var arrowSkin:String;
 	@:optional var splashSkin:String;
+	@:optional var strumLines:Array<StrumLineData>;
+}
+
+typedef StrumLineData =
+{
+	var characters:Array<String>;
+	var type:Int; // 0 = Opponent, 1 = Player, 2 = Additional
+	@:optional var visible:Null<Bool>;
+	@:optional var strumPos:Array<Float>; //(0..1)
+	@:optional var strumScale:Null<Float>;
+	@:optional var scrollSpeed:Null<Float>;
+	@:optional var downScroll:Null<Bool>;
+	@:optional var keysCount:Null<Int>;
+	@:optional var cpuControlled:Null<Bool>;
 }
 
 typedef SwagSection =
@@ -63,6 +77,17 @@ class Song
 	public var player2:String = 'dad';
 	public var gfVersion:String = 'gf';
 	public var format:String = 'psych_v1';
+
+	public static function getDefaultStrumLines(song:SwagSong):Array<StrumLineData>
+	{
+		var list:Array<StrumLineData> = [
+			{characters: [song.player2], type: 0, visible: true, strumScale: 1},
+			{characters: [song.player1], type: 1, visible: true, strumScale: 1}
+		];
+		if (song.gfVersion != null && song.gfVersion.length > 0)
+			list.push({characters: [song.gfVersion], type: 2, visible: false, strumScale: 1});
+		return list;
+	}
 
 	public static function convert(songJson:Dynamic) // Convert old charts to psych_v1 format
 	{

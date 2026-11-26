@@ -2,6 +2,7 @@ package backend;
 
 import openfl.utils.Assets;
 import lime.utils.Assets as LimeAssets;
+import flixel.math.FlxMath;
 
 class CoolUtil
 {
@@ -80,6 +81,20 @@ class CoolUtil
 			return Math.floor(value);
 
 		return Math.floor(value * Math.pow(10, decimals)) / Math.pow(10, decimals);
+	}
+
+	public static inline function expLerp(a:Float, b:Float, decay:Float, ?elapsed:Float):Float
+	{
+		var dt:Float = elapsed != null ? elapsed : FlxG.elapsed;
+		return b + (a - b) * Math.exp(-decay * dt);
+	}
+
+	public static inline function fpsLerp(a:Float, b:Float, ratio:Float, ?elapsed:Float):Float
+	{
+		if (ratio <= 0) return a;
+		if (ratio >= 1) return b;
+		var dt:Float = elapsed != null ? elapsed : FlxG.elapsed;
+		return FlxMath.lerp(a, b, 1 - Math.pow(1 - ratio, dt * 60));
 	}
 
 	inline public static function dominantColor(sprite:flixel.FlxSprite):Int

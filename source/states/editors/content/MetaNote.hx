@@ -64,7 +64,7 @@ class MetaNote extends Note
 			if(sustainSprite == null)
 			{
 				sustainSprite = new FlxSprite().makeGraphic(1, 1, FlxColor.WHITE);
-				sustainSprite.scrollFactor.x = 0;
+				sustainSprite.scrollFactor.x = 1;
 			}
 			sustainSprite.setGraphicSize(8, Math.max(ChartingState.GRID_SIZE/4, (Math.round((v * ChartingState.GRID_SIZE + ChartingState.GRID_SIZE) / stepCrochet) * zoom) - ChartingState.GRID_SIZE/2));
 			sustainSprite.updateHitbox();
@@ -100,7 +100,7 @@ class MetaNote extends Note
 				txt.borderStyle = SHADOW;
 				txt.shadowOffset.set(2, 2);
 				txt.borderColor = FlxColor.BLACK;
-				txt.scrollFactor.x = 0;
+				txt.scrollFactor.x = 1;
 				noteTypeTexts.set(num, txt);
 			}
 			else txt = noteTypeTexts.get(num);
@@ -151,7 +151,7 @@ class EventMetaNote extends MetaNote
 
 		eventText = new FlxText(0, 0, 400, '', 12);
 		eventText.setFormat(Paths.font('vcr.ttf'), 12, FlxColor.WHITE, RIGHT);
-		eventText.scrollFactor.x = 0;
+		eventText.scrollFactor.x = 1;
 		updateEventText();
 	}
 	
