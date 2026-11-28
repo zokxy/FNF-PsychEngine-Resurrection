@@ -1,13 +1,30 @@
 package backend;
 
-// PsychCamera handles followLerp based on elapsed
-// and stops camera from snapping at higher framerates
-
 class PsychCamera extends FlxCamera
 {
+
+	var _appliedFilters:Array<openfl.filters.BitmapFilter> = null;
+
+	inline function applyFilters():Void
+	{
+		var wanted:Array<openfl.filters.BitmapFilter> = filtersEnabled ? filters : null;
+		var wantedLen:Int = wanted == null ? 0 : wanted.length;
+		var curLen:Int = _appliedFilters == null ? 0 : _appliedFilters.length;
+		var changed:Bool = wantedLen != curLen;
+		if (!changed && wantedLen > 0)
+		{
+			for (i in 0...wantedLen)
+				if (wanted[i] != _appliedFilters[i]) { changed = true; break; }
+		}
+		if (!changed) return;
+
+		flashSprite.filters = wanted;
+		_appliedFilters = (wantedLen > 0) ? wanted.copy() : null;
+	}
+
 	override public function update(elapsed:Float):Void
 	{
-		// follow the target, if there is one
+
 		if (target != null)
 		{
 			updateFollowDelta(elapsed);
@@ -17,7 +34,7 @@ class PsychCamera extends FlxCamera
 		updateFlash(elapsed);
 		updateFade(elapsed);
 
-		flashSprite.filters = filtersEnabled ? filters : null;
+		applyFilters();
 
 		updateFlashSpritePosition();
 		updateShake(elapsed);
@@ -25,8 +42,7 @@ class PsychCamera extends FlxCamera
 
 	public function updateFollowDelta(?elapsed:Float = 0):Void
 	{
-		// Either follow the object closely,
-		// or double check our deadzone and update accordingly.
+
 		if (deadzone == null)
 		{
 			target.getMidpoint(_point);
@@ -58,8 +74,7 @@ class PsychCamera extends FlxCamera
 				{
 					_scrollTarget.y -= viewHeight;
 				}
-				
-				// without this we see weird behavior when switching to SCREEN_BY_SCREEN at arbitrary scroll positions
+
 				bindScrollPos(_scrollTarget);
 			}
 			else
@@ -91,7 +106,7 @@ class PsychCamera extends FlxCamera
 			{
 				if (_lastTargetPosition == null)
 				{
-					_lastTargetPosition = FlxPoint.get(target.x, target.y); // Creates this point.
+					_lastTargetPosition = FlxPoint.get(target.x, target.y);
 				}
 				_scrollTarget.x += (target.x - _lastTargetPosition.x) * followLead.x;
 				_scrollTarget.y += (target.y - _lastTargetPosition.y) * followLead.y;
@@ -104,7 +119,7 @@ class PsychCamera extends FlxCamera
 		var mult:Float = 1 - Math.exp(-elapsed * followLerp / (1/60));
 		scroll.x += (_scrollTarget.x - scroll.x) * mult;
 		scroll.y += (_scrollTarget.y - scroll.y) * mult;
-		//trace('lerp on this frame: $mult');
+
 	}
 
 	override function set_followLerp(value:Float)

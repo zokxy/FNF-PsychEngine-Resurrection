@@ -114,6 +114,65 @@ class MemoryManager
 			OpenFLAssets.cache.removeSound(cacheKey);
 	}
 
+	public static function estimateTextureBytes():Float
+	{
+		var total:Float = 0;
+		@:privateAccess
+		for (g in FlxG.bitmap._cache)
+		{
+			if (g == null || g.bitmap == null) continue;
+			total += g.bitmap.width * g.bitmap.height * 4.0;
+		}
+		return total;
+	}
+
+	public static function estimateFilterBufferBytes():Float
+	{
+		var total:Float = 0;
+		function count(s:openfl.display.DisplayObject):Void
+		{
+			if (s == null) return;
+			@:privateAccess
+			{
+				if (s.__cacheBitmapData != null) total += s.__cacheBitmapData.width * s.__cacheBitmapData.height * 4.0;
+				if (s.__cacheBitmapData2 != null) total += s.__cacheBitmapData2.width * s.__cacheBitmapData2.height * 4.0;
+				if (s.__cacheBitmapData3 != null) total += s.__cacheBitmapData3.width * s.__cacheBitmapData3.height * 4.0;
+			}
+		}
+		if (FlxG.cameras != null)
+			for (cam in FlxG.cameras.list)
+				if (cam != null) count(cam.flashSprite);
+		count(FlxG.game);
+		return total;
+	}
+
+	public static function report(topN:Int = 30):Void
+	{
+		#if sys
+		try
+		{
+			var list:Array<{key:String, w:Int, h:Int, bytes:Float}> = [];
+			@:privateAccess
+			for (key => g in FlxG.bitmap._cache)
+			{
+				if (g == null || g.bitmap == null) continue;
+				list.push({key: key, w: g.bitmap.width, h: g.bitmap.height, bytes: g.bitmap.width * g.bitmap.height * 4.0});
+			}
+			list.sort(function(a, b) return a.bytes < b.bytes ? 1 : (a.bytes > b.bytes ? -1 : 0));
+
+			var mb = function(b:Float) return Std.string(Math.round(b / 1048576 * 10) / 10) + ' MB';
+			var out:String = 'Window: ${FlxG.stage.stageWidth}x${FlxG.stage.stageHeight} | game: ${FlxG.width}x${FlxG.height}\n';
+			out += 'Textures in cache: ${list.length} (~${mb(estimateTextureBytes())})\n';
+			out += 'Filter/shader camera buffers: ~${mb(estimateFilterBufferBytes())}\n';
+			out += 'Haxe heap: ${mb(getMemoryUsageBytes())}\n\n--- heaviest textures ---\n';
+			for (i in 0...Std.int(Math.min(topN, list.length)))
+				out += '${mb(list[i].bytes)}\t${list[i].w}x${list[i].h}\t${list[i].key}\n';
+			File.saveContent('texture_report.txt', out);
+		}
+		catch (_:Dynamic) {}
+		#end
+	}
+
 	public static function getMemoryUsageBytes():Float
 	{
 		#if cpp

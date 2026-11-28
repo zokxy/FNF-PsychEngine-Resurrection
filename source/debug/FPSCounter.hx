@@ -59,6 +59,9 @@ class FPSCounter extends TextField
 	public dynamic function updateText():Void
 	{
 		var newText:String = 'FPS: ${currentFPS}\nMemory: ${flixel.util.FlxStringUtil.formatBytes(memoryMegas)}';
+		if (ClientPrefs.data.showFPS)
+			newText += '\nTex: ${flixel.util.FlxStringUtil.formatBytes(backend.MemoryManager.estimateTextureBytes())}'
+				+ ' | FX: ${flixel.util.FlxStringUtil.formatBytes(backend.MemoryManager.estimateFilterBufferBytes())}';
 		if (text != newText)
 			text = newText;
 
