@@ -161,6 +161,7 @@ class HScript extends Iris
 		set('Countdown', backend.BaseStage.Countdown);
 		set('PlayState', PlayState);
 		set('Paths', Paths);
+		set('MemoryManager', MemoryManager);
 		set('Conductor', Conductor);
 		set('ClientPrefs', ClientPrefs);
 		#if ACHIEVEMENTS_ALLOWED
@@ -222,7 +223,7 @@ class HScript extends Iris
 		set('keyboardReleased', function(name:String) return Reflect.getProperty(FlxG.keys.justReleased, name));
 
 		set('anyGamepadJustPressed', function(name:String) return FlxG.gamepads.anyJustPressed(name));
-		set('anyGamepadPressed', function(name:String) FlxG.gamepads.anyPressed(name));
+		set('anyGamepadPressed', function(name:String) return FlxG.gamepads.anyPressed(name));
 		set('anyGamepadReleased', function(name:String) return FlxG.gamepads.anyJustReleased(name));
 
 		set('gamepadAnalogX', function(id:Int, ?leftStick:Bool = true)
@@ -527,17 +528,35 @@ class CustomFlxColor {
 
 class CustomInterp extends crowplexus.hscript.Interp
 {
-	public var parentInstance(default, set):Dynamic = [];
-	private var _instanceFields:Array<String>;
+	static var _fieldsCache:Map<String, Map<String, Bool>> = new Map();
+
+	public var parentInstance(default, set):Dynamic = null;
+	private var _instanceFields:Map<String, Bool>;
+
 	function set_parentInstance(inst:Dynamic):Dynamic
 	{
 		parentInstance = inst;
-		if(parentInstance == null)
+		if (parentInstance == null)
 		{
-			_instanceFields = [];
+			_instanceFields = null;
 			return inst;
 		}
-		_instanceFields = Type.getInstanceFields(Type.getClass(inst));
+		var cls = Type.getClass(inst);
+		if (cls == null)
+		{
+			_instanceFields = null;
+			return inst;
+		}
+		var clsName:String = Type.getClassName(cls);
+		var cached = _fieldsCache.get(clsName);
+		if (cached == null)
+		{
+			cached = new Map<String, Bool>();
+			for (f in Type.getInstanceFields(cls))
+				cached.set(f, true);
+			_fieldsCache.set(clsName, cached);
+		}
+		_instanceFields = cached;
 		return inst;
 	}
 
@@ -546,8 +565,10 @@ class CustomInterp extends crowplexus.hscript.Interp
 		super();
 	}
 
-	override function fcall(o:Dynamic, funcToRun:String, args:Array<Dynamic>):Dynamic {
-		for (_using in usings) {
+	override function fcall(o:Dynamic, funcToRun:String, args:Array<Dynamic>):Dynamic
+	{
+		for (_using in usings)
+		{
 			var v = _using.call(o, funcToRun, args);
 			if (v != null)
 				return v;
@@ -555,7 +576,8 @@ class CustomInterp extends crowplexus.hscript.Interp
 
 		var f = get(o, funcToRun);
 
-		if (f == null) {
+		if (f == null)
+		{
 			Iris.error('Tried to call null function $funcToRun', posInfos());
 			return null;
 		}
@@ -563,29 +585,21 @@ class CustomInterp extends crowplexus.hscript.Interp
 		return Reflect.callMethod(o, f, args);
 	}
 
-	override function resolve(id: String): Dynamic {
-		if (locals.exists(id)) {
-			var l = locals.get(id);
-			return l.r;
-		}
+	override function resolve(id:String):Dynamic
+	{
+		if (locals.exists(id))
+			return locals.get(id).r;
 
-		if (variables.exists(id)) {
-			var v = variables.get(id);
-			return v;
-		}
+		if (variables.exists(id))
+			return variables.get(id);
 
-		if (imports.exists(id)) {
-			var v = imports.get(id);
-			return v;
-		}
+		if (imports.exists(id))
+			return imports.get(id);
 
-		if(parentInstance != null && _instanceFields.contains(id)) {
-			var v = Reflect.getProperty(parentInstance, id);
-			return v;
-		}
+		if (parentInstance != null && _instanceFields != null && _instanceFields.exists(id))
+			return Reflect.getProperty(parentInstance, id);
 
 		error(EUnknownVariable(id));
-
 		return null;
 	}
 }

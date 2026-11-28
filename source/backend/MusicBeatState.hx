@@ -312,5 +312,7 @@ class MusicBeatState extends FlxState
 			scripts = null;
 		}
 		super.destroy();
+		if (MemoryManager.gcPausedInGameplay)
+			MemoryManager.exitGameplay(true);
 	}
 }

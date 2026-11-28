@@ -106,7 +106,7 @@ class PlayHUD extends FlxSpriteGroup
 		var curTime:Float = Math.max(0, songPos - ClientPrefs.data.noteOffset);
 		songPercent = (songLength > 0) ? (curTime / songLength) : 0;
 
-		if (ClientPrefs.data.timeBarType == 'Song Name') return;
+		if (!timeTxt.visible || ClientPrefs.data.timeBarType == 'Song Name') return;
 
 		var songCalc:Float = (ClientPrefs.data.timeBarType == 'Time Elapsed') ? curTime : (songLength - curTime);
 		var secondsTotal:Int = Math.floor(songCalc / 1000);
@@ -170,7 +170,10 @@ class PlayHUD extends FlxSpriteGroup
 			FlxMath.bound(healthBar.valueFunction(), healthBar.bounds.min, healthBar.bounds.max),
 			healthBar.bounds.min, healthBar.bounds.max, 0, 100
 		);
-		healthBar.percent = (newPercent != null ? newPercent : 0);
+		var target:Float = (newPercent != null ? newPercent : 0);
+		if (healthBar.percent == target) return;
+
+		healthBar.percent = target;
 
 		if (iconP1 != null && iconP1.animation.curAnim != null)
 			iconP1.animation.curAnim.curFrame = (healthBar.percent < 20) ? 1 : 0;

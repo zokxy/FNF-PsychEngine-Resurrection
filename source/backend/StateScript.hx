@@ -215,6 +215,7 @@ class StateScript
 		});
 
 		iris.set('Paths', Paths);
+		iris.set('MemoryManager', MemoryManager);
 		iris.set('ClientPrefs', ClientPrefs);
 		iris.set('Conductor', Conductor);
 		iris.set('Mods', Mods);

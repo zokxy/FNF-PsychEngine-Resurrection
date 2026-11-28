@@ -105,27 +105,35 @@ class CoolUtil
 
 	inline public static function dominantColor(sprite:flixel.FlxSprite):Int
 	{
+		if (sprite == null || sprite.pixels == null || sprite.pixels.image == null)
+			return FlxColor.WHITE;
+
+		var step:Int = Std.int(Math.max(1, Math.min(sprite.frameWidth, sprite.frameHeight) / 32));
 		var countByColor:Map<Int, Int> = [];
-		for(col in 0...sprite.frameWidth)
+		var col:Int = 0;
+		while (col < sprite.frameWidth)
 		{
-			for(row in 0...sprite.frameHeight)
+			var row:Int = 0;
+			while (row < sprite.frameHeight)
 			{
 				var colorOfThisPixel:FlxColor = sprite.pixels.getPixel32(col, row);
-				if(colorOfThisPixel.alphaFloat > 0.05)
+				if (colorOfThisPixel.alphaFloat > 0.05)
 				{
 					colorOfThisPixel = FlxColor.fromRGB(colorOfThisPixel.red, colorOfThisPixel.green, colorOfThisPixel.blue, 255);
 					var count:Int = countByColor.exists(colorOfThisPixel) ? countByColor[colorOfThisPixel] : 0;
 					countByColor[colorOfThisPixel] = count + 1;
 				}
+				row += step;
 			}
+			col += step;
 		}
 
-		var maxCount = 0;
-		var maxKey:Int = 0; //after the loop this will store the max color
+		var maxCount:Int = 0;
+		var maxKey:Int = FlxColor.WHITE;
 		countByColor[FlxColor.BLACK] = 0;
-		for(key => count in countByColor)
+		for (key => count in countByColor)
 		{
-			if(count >= maxCount)
+			if (count >= maxCount)
 			{
 				maxCount = count;
 				maxKey = key;

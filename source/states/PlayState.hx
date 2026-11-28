@@ -662,12 +662,14 @@ class PlayState extends MusicBeatState
 		callOnScripts('onCreatePost');
 		
 		noteManager.precacheSplash();
+		_onNoteSpawned = onNoteSpawned;
 
 		super.create();
-		Paths.clearUnusedMemory();
-
 		cacheCountdown();
 		cachePopUpScore();
+
+		Paths.clearUnusedMemory();
+		MemoryManager.enterGameplay();
 
 		if(eventNotes.length < 1) checkEventNote();
 	}
@@ -1354,6 +1356,7 @@ class PlayState extends MusicBeatState
 			FlxTween.globalManager.forEach(function(twn:FlxTween) if(!twn.finished) twn.active = false);
 		}
 
+		if (paused) MemoryManager.exitGameplay(false);
 		super.openSubState(SubState);
 	}
 
@@ -1375,6 +1378,7 @@ class PlayState extends MusicBeatState
 			callOnScripts('onResume');
 			resetRPC(startTimer != null && startTimer.finished);
 		}
+		if (!paused && !endingSong) MemoryManager.enterGameplay();
 	}
 
 	override public function onFocus():Void
@@ -1424,6 +1428,13 @@ class PlayState extends MusicBeatState
 	var startedCountdown:Bool = false;
 	var canPause:Bool = true;
 	var allowDebugKeys:Bool = true;
+	static final _emptyArgs:Array<Dynamic> = [];
+	static final _defaultExcludeValues:Array<Dynamic> = [LuaUtils.Function_Continue];
+	var _updateArgs:Array<Dynamic> = [0.0];
+	var _onNoteSpawned:Note->Void;
+	var _holdArray:Array<Bool> = [];
+	var _pressArray:Array<Bool> = [];
+	var _releaseArray:Array<Bool> = [];
 
 	override public function update(elapsed:Float)
 	{
@@ -1440,7 +1451,8 @@ class PlayState extends MusicBeatState
 			}
 		}
 		else FlxG.camera.followLerp = 0;
-		callOnScripts('onUpdate', [elapsed]);
+		_updateArgs[0] = elapsed;
+		callOnScripts('onUpdate', _updateArgs);
 
 		super.update(elapsed);
 
@@ -1498,11 +1510,7 @@ class PlayState extends MusicBeatState
 		}
 		doDeathCheck();
 
-		noteManager.spawnUpcoming(Conductor.songPosition, songSpeed, playbackRate, function(dunceNote:Note)
-		{
-			callOnLuas('onSpawnNote', [notes.members.indexOf(dunceNote), dunceNote.noteData, dunceNote.noteType, dunceNote.isSustainNote, dunceNote.strumTime]);
-			callOnHScript('onSpawnNote', [dunceNote]);
-		});
+		noteManager.spawnUpcoming(Conductor.songPosition, songSpeed, playbackRate, _onNoteSpawned);
 
 		if (generatedMusic)
 		{
@@ -1532,7 +1540,14 @@ class PlayState extends MusicBeatState
 		#end
 
 		setOnScripts('botPlay', cpuControlled);
-		callOnScripts('onUpdatePost', [elapsed]);
+		_updateArgs[0] = elapsed;
+		callOnScripts('onUpdatePost', _updateArgs);
+	}
+
+	function onNoteSpawned(dunceNote:Note):Void
+	{
+		callOnLuas('onSpawnNote', [notes.members.indexOf(dunceNote), dunceNote.noteData, dunceNote.noteType, dunceNote.isSustainNote, dunceNote.strumTime]);
+		callOnHScript('onSpawnNote', [dunceNote]);
 	}
 
 	// Health icon updaters
@@ -1630,7 +1645,7 @@ class PlayState extends MusicBeatState
 				persistentDraw = false;
 				FlxTimer.globalManager.clear();
 				FlxTween.globalManager.clear();
-				FlxG.camera.setFilters([]);
+				FlxG.camera.filters = null;
 
 				if(GameOverSubstate.deathDelay > 0)
 				{
@@ -2273,28 +2288,41 @@ class PlayState extends MusicBeatState
 	// Hold notes
 	private function keysCheck():Void
 	{
-		// HOLDING
-		var holdArray:Array<Bool> = [];
-		var pressArray:Array<Bool> = [];
-		var releaseArray:Array<Bool> = [];
-		for (key in keysArray)
+		var len:Int = keysArray.length;
+		if (_holdArray.length != len)
 		{
-			holdArray.push(controls.pressed(key));
-			pressArray.push(controls.justPressed(key));
-			releaseArray.push(controls.justReleased(key));
+			_holdArray.resize(len);
+			_pressArray.resize(len);
+			_releaseArray.resize(len);
 		}
 
-		// TO DO: Find a better way to handle controller inputs, this should work for now
-		if(controls.controllerMode && pressArray.contains(true))
-			for (i in 0...pressArray.length)
-				if(pressArray[i] && strumsBlocked[i] != true)
+		var anyHold:Bool = false;
+		var anyPress:Bool = false;
+		var anyRelease:Bool = false;
+		for (i in 0...len)
+		{
+			var key:String = keysArray[i];
+			var h:Bool = controls.pressed(key);
+			var p:Bool = controls.justPressed(key);
+			var r:Bool = controls.justReleased(key);
+			_holdArray[i] = h;
+			_pressArray[i] = p;
+			_releaseArray[i] = r;
+			if (h) anyHold = true;
+			if (p) anyPress = true;
+			if (r) anyRelease = true;
+		}
+
+		if (controls.controllerMode && anyPress)
+			for (i in 0...len)
+				if (_pressArray[i] && strumsBlocked[i] != true)
 					keyPressed(i);
 
 		if (startedCountdown && !inCutscene && !boyfriend.stunned && generatedMusic)
 		{
-			judgement.checkSustainHolds(notes, holdArray, guitarHeroSustains, goodNoteHit, noteManager.isNoteControllable);
+			judgement.checkSustainHolds(notes, _holdArray, guitarHeroSustains, goodNoteHit, noteManager.isNoteControllable);
 
-			if (!holdArray.contains(true) || endingSong)
+			if (!anyHold || endingSong)
 				playerDance();
 
 			#if ACHIEVEMENTS_ALLOWED
@@ -2302,19 +2330,23 @@ class PlayState extends MusicBeatState
 			#end
 		}
 
-		// TO DO: Find a better way to handle controller inputs, this should work for now
-		if((controls.controllerMode || strumsBlocked.contains(true)) && releaseArray.contains(true))
-			for (i in 0...releaseArray.length)
-				if(releaseArray[i] || strumsBlocked[i] == true)
+		if ((controls.controllerMode || strumsBlocked.contains(true)) && anyRelease)
+			for (i in 0...len)
+				if (_releaseArray[i] || strumsBlocked[i] == true)
 					keyReleased(i);
 	}
 
 	function noteMiss(daNote:Note):Void { //You didn't hit the key and let it go offscreen, also used by Hurt Notes
 		//Dupe note remove
-		notes.forEachAlive(function(note:Note) {
-			if (daNote != note && daNote.mustPress && daNote.strumLineID == note.strumLineID && daNote.noteData == note.noteData && daNote.isSustainNote == note.isSustainNote && Math.abs(daNote.strumTime - note.strumTime) < 1)
+		var noteMembers = notes.members;
+		var i:Int = noteMembers.length - 1;
+		while (i >= 0)
+		{
+			var note:Note = noteMembers[i];
+			i--;
+			if (note != null && note.alive && daNote != note && daNote.mustPress && daNote.strumLineID == note.strumLineID && daNote.noteData == note.noteData && daNote.isSustainNote == note.isSustainNote && Math.abs(daNote.strumTime - note.strumTime) < 1)
 				invalidateNote(note);
-		});
+		}
 
 		noteMissCommon(daNote.noteData, daNote);
 		stagesFunc(function(stage:BaseStage) stage.noteMiss(daNote));
@@ -2632,17 +2664,23 @@ class PlayState extends MusicBeatState
 		FlxG.stage.removeEventListener(KeyboardEvent.KEY_DOWN, onKeyPress);
 		FlxG.stage.removeEventListener(KeyboardEvent.KEY_UP, onKeyRelease);
 
-		FlxG.camera.setFilters([]);
+		FlxG.camera.filters = null;
 
 		#if FLX_PITCH FlxG.sound.music.pitch = 1; #end
 		FlxG.animationTimeScale = 1;
 
 		Note.globalRgbShaders = [];
+		objects.NoteSplash.PixelSplashShaderRef.shaderCache.clear();
 		backend.NoteTypesConfig.clearNoteTypesData();
 
 		NoteSplash.configs.clear();
 		instance = null;
+		if (camGame != null) camGame.filters = null;
+		if (camHUD != null) camHUD.filters = null;
+		if (camOther != null) camOther.filters = null;
+
 		super.destroy();
+		MemoryManager.exitGameplay(true);
 	}
 
 	var lastStepHit:Int = -1;
@@ -2676,6 +2714,7 @@ class PlayState extends MusicBeatState
 		characterBopper(curBeat);
 
 		super.beatHit();
+		MemoryManager.checkGameplayBudget();
 		lastBeatHit = curBeat;
 
 		setOnScripts('curBeat', curBeat);
@@ -2807,49 +2846,53 @@ class PlayState extends MusicBeatState
 	#end
 
 	public function callOnScripts(funcToCall:String, args:Array<Dynamic> = null, ignoreStops = false, exclusions:Array<String> = null, excludeValues:Array<Dynamic> = null):Dynamic {
-		var returnVal:Dynamic = LuaUtils.Function_Continue;
-		if(args == null) args = [];
-		if(exclusions == null) exclusions = [];
-		if(excludeValues == null) excludeValues = [LuaUtils.Function_Continue];
+		if (args == null) args = _emptyArgs;
+		var exVals:Array<Dynamic> = (excludeValues != null) ? excludeValues : _defaultExcludeValues;
 
-		var result:Dynamic = callOnLuas(funcToCall, args, ignoreStops, exclusions, excludeValues);
-		if(result == null || excludeValues.contains(result)) result = callOnHScript(funcToCall, args, ignoreStops, exclusions, excludeValues);
+		var result:Dynamic = callOnLuas(funcToCall, args, ignoreStops, exclusions, exVals);
+		if (result == null || exVals.contains(result))
+			result = callOnHScript(funcToCall, args, ignoreStops, exclusions, exVals);
 		return result;
 	}
 
 	public function callOnLuas(funcToCall:String, args:Array<Dynamic> = null, ignoreStops = false, exclusions:Array<String> = null, excludeValues:Array<Dynamic> = null):Dynamic {
 		var returnVal:Dynamic = LuaUtils.Function_Continue;
 		#if LUA_ALLOWED
-		if(args == null) args = [];
-		if(exclusions == null) exclusions = [];
-		if(excludeValues == null) excludeValues = [LuaUtils.Function_Continue];
+		if (luaArray == null || luaArray.length == 0) return returnVal;
+		if (args == null) args = _emptyArgs;
+		var exVals:Array<Dynamic> = (excludeValues != null) ? excludeValues : _defaultExcludeValues;
 
-		var arr:Array<FunkinLua> = [];
+		var arr:Array<FunkinLua> = null;
 		for (script in luaArray)
 		{
-			if(script.closed)
+			if (script.closed)
 			{
+				if (arr == null) arr = [];
 				arr.push(script);
 				continue;
 			}
 
-			if(exclusions.contains(script.scriptName))
+			if (exclusions != null && exclusions.contains(script.scriptName))
 				continue;
 
 			var myValue:Dynamic = script.call(funcToCall, args);
-			if((myValue == LuaUtils.Function_StopLua || myValue == LuaUtils.Function_StopAll) && !excludeValues.contains(myValue) && !ignoreStops)
+			if ((myValue == LuaUtils.Function_StopLua || myValue == LuaUtils.Function_StopAll) && !exVals.contains(myValue) && !ignoreStops)
 			{
 				returnVal = myValue;
 				break;
 			}
 
-			if(myValue != null && !excludeValues.contains(myValue))
+			if (myValue != null && !exVals.contains(myValue))
 				returnVal = myValue;
 
-			if(script.closed) arr.push(script);
+			if (script.closed)
+			{
+				if (arr == null) arr = [];
+				arr.push(script);
+			}
 		}
 
-		if(arr.length > 0)
+		if (arr != null)
 			for (script in arr)
 				luaArray.remove(script);
 		#end
@@ -2860,32 +2903,28 @@ class PlayState extends MusicBeatState
 		var returnVal:Dynamic = LuaUtils.Function_Continue;
 
 		#if HSCRIPT_ALLOWED
-		if(exclusions == null) exclusions = new Array();
-		if(excludeValues == null) excludeValues = new Array();
-		excludeValues.push(LuaUtils.Function_Continue);
-
-		var len:Int = hscriptArray.length;
-		if (len < 1)
+		if (hscriptArray == null || hscriptArray.length == 0)
 			return returnVal;
 
-		for(script in hscriptArray)
+		for (script in hscriptArray)
 		{
 			@:privateAccess
-			if(script == null || !script.exists(funcToCall) || exclusions.contains(script.origin))
+			if (script == null || !script.exists(funcToCall) || (exclusions != null && exclusions.contains(script.origin)))
 				continue;
 
 			var callValue = script.call(funcToCall, args);
-			if(callValue != null)
+			if (callValue != null)
 			{
 				var myValue:Dynamic = callValue.returnValue;
+				var isExcluded:Bool = (myValue == LuaUtils.Function_Continue || (excludeValues != null && excludeValues.contains(myValue)));
 
-				if((myValue == LuaUtils.Function_StopHScript || myValue == LuaUtils.Function_StopAll) && !excludeValues.contains(myValue) && !ignoreStops)
+				if ((myValue == LuaUtils.Function_StopHScript || myValue == LuaUtils.Function_StopAll) && !isExcluded && !ignoreStops)
 				{
 					returnVal = myValue;
 					break;
 				}
 
-				if(myValue != null && !excludeValues.contains(myValue))
+				if (myValue != null && !isExcluded)
 					returnVal = myValue;
 			}
 		}
@@ -2895,16 +2934,15 @@ class PlayState extends MusicBeatState
 	}
 
 	public function setOnScripts(variable:String, arg:Dynamic, exclusions:Array<String> = null) {
-		if(exclusions == null) exclusions = [];
 		setOnLuas(variable, arg, exclusions);
 		setOnHScript(variable, arg, exclusions);
 	}
 
 	public function setOnLuas(variable:String, arg:Dynamic, exclusions:Array<String> = null) {
 		#if LUA_ALLOWED
-		if(exclusions == null) exclusions = [];
+		if (luaArray == null || luaArray.length == 0) return;
 		for (script in luaArray) {
-			if(exclusions.contains(script.scriptName))
+			if (exclusions != null && exclusions.contains(script.scriptName))
 				continue;
 
 			script.set(variable, arg);
@@ -2914,9 +2952,9 @@ class PlayState extends MusicBeatState
 
 	public function setOnHScript(variable:String, arg:Dynamic, exclusions:Array<String> = null) {
 		#if HSCRIPT_ALLOWED
-		if(exclusions == null) exclusions = [];
+		if (hscriptArray == null || hscriptArray.length == 0) return;
 		for (script in hscriptArray) {
-			if(exclusions.contains(script.origin))
+			if (exclusions != null && exclusions.contains(script.origin))
 				continue;
 
 			script.set(variable, arg);

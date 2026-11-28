@@ -35,22 +35,22 @@ class Paths
 	}
 
 	public static var dumpExclusions:Array<String> = ['assets/shared/music/freakyMenu.$SOUND_EXT'];
-	// haya I love you for the base cache dump I took to the max
 	public static function clearUnusedMemory()
 	{
-		// clear non local assets in the tracked assets list
 		for (key in currentTrackedAssets.keys())
 		{
-			// if it is not currently contained within the used local assets
 			if (!_localTrackedSet.exists(key) && !dumpExclusions.contains(key))
 			{
-				destroyGraphic(currentTrackedAssets.get(key)); // get rid of the graphic
-				currentTrackedAssets.remove(key); // and remove the key from local cache map
+				var obj:FlxGraphic = currentTrackedAssets.get(key);
+				if (obj != null)
+				{
+					currentTrackedAssets.remove(key);
+					MemoryManager.disposeGraphic(obj, key);
+				}
 			}
 		}
 
-		// run the garbage collector for good measure lmfao
-		System.gc();
+		MemoryManager.collect(true);
 	}
 
 	// define the locally tracked assets
@@ -69,26 +69,26 @@ class Paths
 	@:access(flixel.system.frontEnds.BitmapFrontEnd._cache)
 	public static function clearStoredMemory()
 	{
-		// clear anything not in the tracked assets list
+		@:privateAccess
 		for (key in FlxG.bitmap._cache.keys())
 		{
-			if (!currentTrackedAssets.exists(key))
-				destroyGraphic(FlxG.bitmap.get(key));
+			var obj = FlxG.bitmap._cache.get(key);
+			if (obj != null && !currentTrackedAssets.exists(key) && !obj.persist)
+				MemoryManager.disposeGraphic(obj, key);
 		}
 
-		// clear all sounds that are cached
 		for (key => asset in currentTrackedSounds)
 		{
-			if (!localTrackedAssets.contains(key) && !dumpExclusions.contains(key) && asset != null)
+			if (asset != null && !_localTrackedSet.exists(key) && !dumpExclusions.contains(key))
 			{
-				Assets.cache.clear(key);
+				MemoryManager.disposeSound(asset, key);
 				currentTrackedSounds.remove(key);
 			}
 		}
-		// flags everything to be cleared out next unused memory clear
+
 		localTrackedAssets = [];
 		_localTrackedSet.clear();
-		#if !html5 openfl.Assets.cache.clear("songs"); #end
+		#if !html5 openfl.utils.Assets.cache.clear("songs"); #end
 	}
 
 	public static function freeGraphicsFromMemory()
@@ -267,20 +267,8 @@ class Paths
 			}
 		}
 
-		if (allowGPU && ClientPrefs.data.cacheOnGPU && bitmap.image != null)
-		{
-			bitmap.lock();
-			if (bitmap.__texture == null)
-			{
-				bitmap.image.premultiplied = true;
-				bitmap.getTexture(FlxG.stage.context3D);
-			}
-			bitmap.getSurface();
-			bitmap.disposeImage();
-			bitmap.image.data = null;
-			bitmap.image = null;
-			bitmap.readable = true;
-		}
+		if (allowGPU)
+			MemoryManager.tryPushToGPU(key, bitmap);
 
 		var graph:FlxGraphic = FlxGraphic.fromBitmapData(bitmap, false, key);
 		graph.persist = true;
@@ -378,25 +366,28 @@ class Paths
 		return parentFrames;
 	}
 
-	inline static public function getSparrowAtlas(key:String, ?parentFolder:String = null, ?allowGPU:Bool = true):FlxAtlasFrames
+	inline static public function getSparrowAtlas(key:String, ?library:String = null, ?allowGPU:Bool = true):FlxAtlasFrames
 	{
-		if(key.contains('psychic')) trace(key, parentFolder, allowGPU);
-		var imageLoaded:FlxGraphic = image(key, parentFolder, allowGPU);
+		var imageLoaded:FlxGraphic = image(key, library, allowGPU);
+		if (imageLoaded == null) return null;
+
+		var cached:FlxAtlasFrames = FlxAtlasFrames.findFrame(imageLoaded);
+		if (cached != null) return cached;
+
 		#if MODS_ALLOWED
 		var xmlExists:Bool = false;
-
 		var xml:String = modsXml(key);
-		if(FileSystem.exists(xml)) xmlExists = true;
-
-		return FlxAtlasFrames.fromSparrow(imageLoaded, (xmlExists ? File.getContent(xml) : getPath(Language.getFileTranslation('images/$key') + '.xml', TEXT, parentFolder)));
+		if (FileSystem.exists(xml)) xmlExists = true;
+		return FlxAtlasFrames.fromSparrow(imageLoaded, (xmlExists ? File.getContent(xml) : getPath('images/$key.xml', library)));
 		#else
-		return FlxAtlasFrames.fromSparrow(imageLoaded, getPath(Language.getFileTranslation('images/$key') + '.xml', TEXT, parentFolder));
+		return FlxAtlasFrames.fromSparrow(imageLoaded, getPath('images/$key.xml', library));
 		#end
 	}
 
 	inline static public function getPackerAtlas(key:String, ?parentFolder:String = null, ?allowGPU:Bool = true):FlxAtlasFrames
 	{
 		var imageLoaded:FlxGraphic = image(key, parentFolder, allowGPU);
+		var cached = FlxAtlasFrames.findFrame(imageLoaded); if (cached != null) return cached;
 		#if MODS_ALLOWED
 		var txtExists:Bool = false;
 		
@@ -412,6 +403,7 @@ class Paths
 	inline static public function getAsepriteAtlas(key:String, ?parentFolder:String = null, ?allowGPU:Bool = true):FlxAtlasFrames
 	{
 		var imageLoaded:FlxGraphic = image(key, parentFolder, allowGPU);
+		var cached = FlxAtlasFrames.findFrame(imageLoaded); if (cached != null) return cached;
 		#if MODS_ALLOWED
 		var jsonExists:Bool = false;
 

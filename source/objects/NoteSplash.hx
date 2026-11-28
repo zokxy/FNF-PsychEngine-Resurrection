@@ -274,9 +274,14 @@ class NoteSplash extends FlxSprite
 				else tempShader.copyValues(Note.globalRgbShaders[noteData % Note.colArray.length]);
 			}
 		}
+		var useRGBShader:Bool = (tempShader != null);
 		rgbShader.copyValues(tempShader);
-		if (!config.allowPixel) rgbShader.pixelAmount = 1;
-		else if (PlayState.isPixelStage) rgbShader.pixelAmount = 6;
+		shader = useRGBShader ? rgbShader.shader : null;
+
+		rgbShader.pixelAmount = !config.allowPixel ? 1 : (PlayState.isPixelStage ? PlayState.daPixelZoom : 1);
+
+		if (rgbShader.shader != null)
+			rgbShader.shader.uBlocksize.value = [rgbShader.pixelAmount, rgbShader.pixelAmount];
 
 		offset.set(10, 10);
 		var conf:NoteSplashAnim = config.animations.get(anim);
@@ -434,56 +439,53 @@ class NoteSplash extends FlxSprite
 	}
 }
 
-class PixelSplashShaderRef 
+class PixelSplashShaderRef
 {
-	public var shader:PixelSplashShader = new PixelSplashShader();
-	public var enabled(default, set):Bool = true;
-	public var pixelAmount(default, set):Float = 1;
+	public static var shaderCache:Map<String, PixelSplashShader> = new Map();
+
+	public var shader:PixelSplashShader;
+	public var pixelAmount:Float = 1;
 
 	public function copyValues(tempShader:RGBPalette)
 	{
-		if (tempShader != null)
+		if (tempShader == null)
 		{
-			for (i in 0...3)
-			{
-				shader.r.value[i] = tempShader.shader.r.value[i];
-				shader.g.value[i] = tempShader.shader.g.value[i];
-				shader.b.value[i] = tempShader.shader.b.value[i];
-			}
-			shader.mult.value[0] = tempShader.shader.mult.value[0];
+			shader = null;
+			return;
 		}
-		else enabled = false;
-	}
 
-	public function set_enabled(value:Bool)
-	{
-		enabled = value;
-		shader.mult.value = [value ? 1 : 0];
-		return value;
-	}
+		var r0 = tempShader.shader.r.value[0];
+		var r1 = tempShader.shader.r.value[1];
+		var r2 = tempShader.shader.r.value[2];
+		var g0 = tempShader.shader.g.value[0];
+		var g1 = tempShader.shader.g.value[1];
+		var g2 = tempShader.shader.g.value[2];
+		var b0 = tempShader.shader.b.value[0];
+		var b1 = tempShader.shader.b.value[1];
+		var b2 = tempShader.shader.b.value[2];
+		var m = tempShader.shader.mult.value[0];
+		var px = PlayState.isPixelStage ? 1 : 0;
 
-	public function set_pixelAmount(value:Float)
-	{
-		pixelAmount = value;
-		shader.uBlocksize.value = [value, value];
-		return value;
-	}
+		var key:String = '$r0,$r1,$r2|$g0,$g1,$g2|$b0,$b1,$b2|$m|$px';
 
-	public function reset()
-	{
-		shader.r.value = [0, 0, 0];
-		shader.g.value = [0, 0, 0];
-		shader.b.value = [0, 0, 0];
+		var cached = shaderCache.get(key);
+		if (cached == null)
+		{
+			cached = new PixelSplashShader();
+			cached.r.value = [r0, r1, r2];
+			cached.g.value = [g0, g1, g2];
+			cached.b.value = [b0, b1, b2];
+			cached.mult.value = [m];
+
+			shaderCache.set(key, cached);
+		}
+
+		shader = cached;
 	}
 
 	public function new()
 	{
-		reset();
-		enabled = true;
-
-		if (!PlayState.isPixelStage) pixelAmount = 1;
-		else pixelAmount = PlayState.daPixelZoom;
-		//trace('Created shader ' + Conductor.songPosition);
+		shader = null;
 	}
 }
 

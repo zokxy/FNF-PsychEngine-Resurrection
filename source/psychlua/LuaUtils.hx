@@ -42,27 +42,30 @@ class LuaUtils
 
 	public static function setVarInArray(instance:Dynamic, variable:String, value:Dynamic, allowMaps:Bool = false):Any
 	{
-		var splitProps:Array<String> = variable.split('[');
-		if(splitProps.length > 1)
+		if (variable.indexOf('[') != -1)
 		{
-			var target:Dynamic = null;
-			if(MusicBeatState.getVariables().exists(splitProps[0]))
+			var splitProps:Array<String> = variable.split('[');
+			if(splitProps.length > 1)
 			{
-				var retVal:Dynamic = MusicBeatState.getVariables().get(splitProps[0]);
-				if(retVal != null)
-					target = retVal;
-			}
-			else target = Reflect.getProperty(instance, splitProps[0]);
+				var target:Dynamic = null;
+				if(MusicBeatState.getVariables().exists(splitProps[0]))
+				{
+					var retVal:Dynamic = MusicBeatState.getVariables().get(splitProps[0]);
+					if(retVal != null)
+						target = retVal;
+				}
+				else target = Reflect.getProperty(instance, splitProps[0]);
 
-			for (i in 1...splitProps.length)
-			{
-				var j:Dynamic = splitProps[i].substr(0, splitProps[i].length - 1);
-				if(i >= splitProps.length-1) //Last array
-					target[j] = value;
-				else //Anything else
-					target = target[j];
+				for (i in 1...splitProps.length)
+				{
+					var j:Dynamic = splitProps[i].substr(0, splitProps[i].length - 1);
+					if(i >= splitProps.length-1) //Last array
+						target[j] = value;
+					else //Anything else
+						target = target[j];
+				}
+				return target;
 			}
-			return target;
 		}
 
 		if(allowMaps && isMap(instance))
@@ -82,25 +85,28 @@ class LuaUtils
 	}
 	public static function getVarInArray(instance:Dynamic, variable:String, allowMaps:Bool = false):Any
 	{
-		var splitProps:Array<String> = variable.split('[');
-		if(splitProps.length > 1)
+		if (variable.indexOf('[') != -1)
 		{
-			var target:Dynamic = null;
-			if(MusicBeatState.getVariables().exists(splitProps[0]))
+			var splitProps:Array<String> = variable.split('[');
+			if(splitProps.length > 1)
 			{
-				var retVal:Dynamic = MusicBeatState.getVariables().get(splitProps[0]);
-				if(retVal != null)
-					target = retVal;
-			}
-			else
-				target = Reflect.getProperty(instance, splitProps[0]);
+				var target:Dynamic = null;
+				if(MusicBeatState.getVariables().exists(splitProps[0]))
+				{
+					var retVal:Dynamic = MusicBeatState.getVariables().get(splitProps[0]);
+					if(retVal != null)
+						target = retVal;
+				}
+				else
+					target = Reflect.getProperty(instance, splitProps[0]);
 
-			for (i in 1...splitProps.length)
-			{
-				var j:Dynamic = splitProps[i].substr(0, splitProps[i].length - 1);
-				target = target[j];
+				for (i in 1...splitProps.length)
+				{
+					var j:Dynamic = splitProps[i].substr(0, splitProps[i].length - 1);
+					target = target[j];
+				}
+				return target;
 			}
-			return target;
 		}
 		
 		if(allowMaps && isMap(instance))
@@ -204,28 +210,34 @@ class LuaUtils
 	}
 
 	public static function setGroupStuff(leArray:Dynamic, variable:String, value:Dynamic, ?allowMaps:Bool = false) {
-		var split:Array<String> = variable.split('.');
-		if(split.length > 1) {
-			var obj:Dynamic = Reflect.getProperty(leArray, split[0]);
-			for (i in 1...split.length-1)
-				obj = Reflect.getProperty(obj, split[i]);
+		if (variable.indexOf('.') != -1)
+		{
+			var split:Array<String> = variable.split('.');
+			if(split.length > 1) {
+				var obj:Dynamic = Reflect.getProperty(leArray, split[0]);
+				for (i in 1...split.length-1)
+					obj = Reflect.getProperty(obj, split[i]);
 
-			leArray = obj;
-			variable = split[split.length-1];
+				leArray = obj;
+				variable = split[split.length-1];
+			}
 		}
 		if(allowMaps && isMap(leArray)) leArray.set(variable, value);
 		else Reflect.setProperty(leArray, variable, value);
 		return value;
 	}
 	public static function getGroupStuff(leArray:Dynamic, variable:String, ?allowMaps:Bool = false) {
-		var split:Array<String> = variable.split('.');
-		if(split.length > 1) {
-			var obj:Dynamic = Reflect.getProperty(leArray, split[0]);
-			for (i in 1...split.length-1)
-				obj = Reflect.getProperty(obj, split[i]);
+		if (variable.indexOf('.') != -1)
+		{
+			var split:Array<String> = variable.split('.');
+			if(split.length > 1) {
+				var obj:Dynamic = Reflect.getProperty(leArray, split[0]);
+				for (i in 1...split.length-1)
+					obj = Reflect.getProperty(obj, split[i]);
 
-			leArray = obj;
-			variable = split[split.length-1];
+				leArray = obj;
+				variable = split[split.length-1];
+			}
 		}
 
 		if(allowMaps && isMap(leArray)) return leArray.get(variable);
@@ -264,8 +276,15 @@ class LuaUtils
 		}
 		return false;
 	}
-	public static function isLuaSupported(value:Any):Bool {
-		return (value == null || isOfTypes(value, [Bool, Int, Float, String, Array]) || Type.typeof(value) == ValueType.TObject);
+	public static function isLuaSupported(value:Any):Bool
+	{
+		return (value == null
+			|| Std.isOfType(value, Bool)
+			|| Std.isOfType(value, Int)
+			|| Std.isOfType(value, Float)
+			|| Std.isOfType(value, String)
+			|| Std.isOfType(value, Array)
+			|| Type.typeof(value) == ValueType.TObject);
 	}
 	
 	public static function getTargetInstance()

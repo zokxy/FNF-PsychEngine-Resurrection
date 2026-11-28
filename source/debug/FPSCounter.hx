@@ -3,25 +3,15 @@ package debug;
 import flixel.FlxG;
 import openfl.text.TextField;
 import openfl.text.TextFormat;
-import openfl.system.System;
 
-/**
-	The FPS class provides an easy-to-use monitor to display
-	the current frame rate of an OpenFL project
-**/
 class FPSCounter extends TextField
 {
-	/**
-		The current frame rate, expressed using frames-per-second
-	**/
 	public var currentFPS(default, null):Int;
-
-	/**
-		The current memory usage (WARNING: this is NOT your total program memory usage, rather it shows the garbage collector memory)
-	**/
 	public var memoryMegas(get, never):Float;
 
 	@:noCompletion private var times:Array<Float>;
+	var _timesHead:Int = 0;
+	var deltaTimeout:Float = 0.0;
 
 	public function new(x:Float = 10, y:Float = 10, color:Int = 0x000000)
 	{
@@ -41,32 +31,40 @@ class FPSCounter extends TextField
 		times = [];
 	}
 
-	var deltaTimeout:Float = 0.0;
-
-	// Event Handlers
 	private override function __enterFrame(deltaTime:Float):Void
 	{
 		final now:Float = haxe.Timer.stamp() * 1000;
 		times.push(now);
-		while (times[0] < now - 1000) times.shift();
-		// prevents the overlay from updating every frame, why would you need to anyways @crowplexus
-		if (deltaTimeout < 50) {
-			deltaTimeout += deltaTime;
-			return;
+
+		final cutoff:Float = now - 1000;
+		while (_timesHead < times.length && times[_timesHead] < cutoff)
+			_timesHead++;
+
+		if (_timesHead > 256)
+		{
+			times.splice(0, _timesHead);
+			_timesHead = 0;
 		}
 
-		currentFPS = times.length < FlxG.updateFramerate ? times.length : FlxG.updateFramerate;		
+		deltaTimeout += deltaTime;
+		if (deltaTimeout < 200)
+			return;
+
+		var count:Int = times.length - _timesHead;
+		currentFPS = count < FlxG.updateFramerate ? count : FlxG.updateFramerate;
 		updateText();
 		deltaTimeout = 0.0;
 	}
 
-	public dynamic function updateText():Void { // so people can override it in hscript
-		text = 'FPS: ${currentFPS}'
-		+ '\nMemory: ${flixel.util.FlxStringUtil.formatBytes(memoryMegas)}';
+	public dynamic function updateText():Void
+	{
+		var newText:String = 'FPS: ${currentFPS}\nMemory: ${flixel.util.FlxStringUtil.formatBytes(memoryMegas)}';
+		if (text != newText)
+			text = newText;
 
-		textColor = 0xFFFFFFFF;
-		if (currentFPS < FlxG.drawFramerate * 0.5)
-			textColor = 0xFFFF0000;
+		var newColor:Int = (currentFPS < FlxG.drawFramerate * 0.5) ? 0xFFFF0000 : 0xFFFFFFFF;
+		if (textColor != newColor)
+			textColor = newColor;
 	}
 
 	inline function get_memoryMegas():Float

@@ -1903,17 +1903,15 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			var sndsToKill:Array<String> = [];
 			for (key => snd in Paths.currentTrackedSounds)
 			{
-				//trace(key, snd);
 				if(key.contains('/songs/${Paths.formatToSongPath(PlayState.SONG.song)}/') && snd != null)
 				{
 					sndsToKill.push(key);
-					snd.close();
+					MemoryManager.disposeSound(snd, key);
 				}
 			}
 
 			for (key in sndsToKill)
 			{
-				Assets.cache.clear(key);
 				Paths.currentTrackedSounds.remove(key);
 				Paths.localTrackedAssets.remove(key);
 			}
@@ -5417,6 +5415,22 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 	override function destroy()
 	{
+		for (trk in allVoiceTracks)
+		{
+			if (trk != null && trk != vocals && trk != opponentVocals)
+			{
+				trk.stop();
+				FlxG.sound.list.remove(trk, true);
+				trk.destroy();
+			}
+		}
+		allVoiceTracks = [];
+		lineVoices = [];
+		FlxG.sound.list.remove(vocals, true);
+		FlxG.sound.list.remove(opponentVocals, true);
+		vocals.destroy();
+		opponentVocals.destroy();
+
 		Note.globalRgbShaders = [];
 		backend.NoteTypesConfig.clearNoteTypesData();
 
@@ -5729,8 +5743,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 		@:privateAccess
 		var buffer:AudioBuffer = sound._sound.__buffer;
-		var bytes:Bytes = buffer.data.toBytes();
-		wavData = waveformData(buffer, bytes, cachedSectionTimes[curSec] - Conductor.offset, cachedSectionTimes[curSec + 1] - Conductor.offset, 1, wavData, height);
+		wavData = waveformData(buffer, cachedSectionTimes[curSec] - Conductor.offset, cachedSectionTimes[curSec + 1] - Conductor.offset, 1, wavData, height);
 
 		var hSize:Int = Std.int(stripWidth / 2);
 		var leftLength:Int = (wavData[0][0].length > wavData[0][1].length ? wavData[0][0].length : wavData[0][1].length);
@@ -5803,112 +5816,110 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		#end
 	}
 
-	function waveformData(buffer:AudioBuffer, bytes:Bytes, time:Float, endTime:Float, multiply:Float = 1, ?array:Array<Array<Array<Float>>>, ?steps:Float):Array<Array<Array<Float>>>
+	function waveformData(buffer:AudioBuffer, time:Float, endTime:Float, multiply:Float = 1, ?array:Array<Array<Array<Float>>>, ?steps:Float):Array<Array<Array<Float>>>
 	{
 		#if (lime_cffi && !macro)
 		if (buffer == null || buffer.data == null) return [[[0], [0]], [[0], [0]]];
 
+		var data = buffer.data;
 		var khz:Float = (buffer.sampleRate / 1000);
 		var channels:Int = buffer.channels;
+		var bytesPerFrame:Int = channels * 2;
+		var totalSamples:Int = Std.int(data.length / bytesPerFrame);
 
 		var index:Int = Std.int(time * khz);
-
 		var samples:Float = ((endTime - time) * khz);
-
 		if (steps == null) steps = 1280;
 
 		var samplesPerRow:Float = samples / steps;
 		var samplesPerRowI:Int = Std.int(samplesPerRow);
-
 		var gotIndex:Int = 0;
 
 		var lmin:Float = 0;
 		var lmax:Float = 0;
-
 		var rmin:Float = 0;
 		var rmax:Float = 0;
-
 		var rows:Float = 0;
-
-		var simpleSample:Bool = true;//samples > 17200;
 		var v1:Bool = false;
 
 		if (array == null) array = [[[0], [0]], [[0], [0]]];
 
-		while (index < (bytes.length - 1)) {
-			if (index >= 0) {
-				var byte:Int = bytes.getUInt16(index * channels * 2);
-
-				if (byte > 65535 / 2) byte -= 65535;
-
-				var sample:Float = (byte / 65535);
+		while (index < totalSamples)
+		{
+			if (index >= 0)
+			{
+				var pos:Int = index * bytesPerFrame;
+				var byte:Int = data[pos] | (data[pos + 1] << 8);
+				if (byte > 32767) byte -= 65536;
+				var sample:Float = byte / 32768.0;
 
 				if (sample > 0)
+				{
 					if (sample > lmax) lmax = sample;
+				}
 				else if (sample < 0)
+				{
 					if (sample < lmin) lmin = sample;
+				}
 
-				if (channels >= 2) {
-					byte = bytes.getUInt16((index * channels * 2) + 2);
+				if (channels >= 2)
+				{
+					byte = data[pos + 2] | (data[pos + 3] << 8);
+					if (byte > 32767) byte -= 65536;
+					sample = byte / 32768.0;
 
-					if (byte > 65535 / 2) byte -= 65535;
-
-					sample = (byte / 65535);
-
-					if (sample > 0) {
+					if (sample > 0)
+					{
 						if (sample > rmax) rmax = sample;
-					} else if (sample < 0) {
+					}
+					else if (sample < 0)
+					{
 						if (sample < rmin) rmin = sample;
 					}
 				}
 			}
 
 			v1 = samplesPerRowI > 0 ? (index % samplesPerRowI == 0) : false;
-			while (simpleSample ? v1 : rows >= samplesPerRow) {
+			while (v1)
+			{
 				v1 = false;
 				rows -= samplesPerRow;
-
 				gotIndex++;
 
 				var lRMin:Float = Math.abs(lmin) * multiply;
 				var lRMax:Float = lmax * multiply;
-
 				var rRMin:Float = Math.abs(rmin) * multiply;
 				var rRMax:Float = rmax * multiply;
 
 				if (gotIndex > array[0][0].length) array[0][0].push(lRMin);
-					else array[0][0][gotIndex - 1] = array[0][0][gotIndex - 1] + lRMin;
+				else array[0][0][gotIndex - 1] += lRMin;
 
 				if (gotIndex > array[0][1].length) array[0][1].push(lRMax);
-					else array[0][1][gotIndex - 1] = array[0][1][gotIndex - 1] + lRMax;
+				else array[0][1][gotIndex - 1] += lRMax;
 
 				if (channels >= 2)
 				{
 					if (gotIndex > array[1][0].length) array[1][0].push(rRMin);
-						else array[1][0][gotIndex - 1] = array[1][0][gotIndex - 1] + rRMin;
+					else array[1][0][gotIndex - 1] += rRMin;
 
 					if (gotIndex > array[1][1].length) array[1][1].push(rRMax);
-						else array[1][1][gotIndex - 1] = array[1][1][gotIndex - 1] + rRMax;
+					else array[1][1][gotIndex - 1] += rRMax;
 				}
 				else
 				{
 					if (gotIndex > array[1][0].length) array[1][0].push(lRMin);
-						else array[1][0][gotIndex - 1] = array[1][0][gotIndex - 1] + lRMin;
+					else array[1][0][gotIndex - 1] += lRMin;
 
 					if (gotIndex > array[1][1].length) array[1][1].push(lRMax);
-						else array[1][1][gotIndex - 1] = array[1][1][gotIndex - 1] + lRMax;
+					else array[1][1][gotIndex - 1] += rRMax;
 				}
 
-				lmin = 0;
-				lmax = 0;
-
-				rmin = 0;
-				rmax = 0;
+				lmin = lmax = rmin = rmax = 0;
 			}
 
 			index++;
 			rows++;
-			if(gotIndex > steps) break;
+			if (gotIndex > steps) break;
 		}
 
 		return array;

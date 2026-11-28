@@ -55,6 +55,7 @@ class FunkinLua {
 	#end
 
 	public var callbacks:Map<String, Dynamic> = new Map<String, Dynamic>();
+	var _missingFuncs:Map<String, Bool> = new Map<String, Bool>();
 	public static var customFunctions:Map<String, Dynamic> = new Map<String, Dynamic>();
 
 	public function new(scriptName:String) {
@@ -1606,18 +1607,20 @@ class FunkinLua {
 	public var lastCalledFunction:String = '';
 	public static var lastCalledScript:FunkinLua = null;
 	public function call(func:String, args:Array<Dynamic>):Dynamic {
-		if(closed) return LuaUtils.Function_Continue;
+		if (closed || _missingFuncs.exists(func)) return LuaUtils.Function_Continue;
 
 		lastCalledFunction = func;
 		lastCalledScript = this;
 		try {
-			if(lua == null) return LuaUtils.Function_Continue;
+			if (lua == null) return LuaUtils.Function_Continue;
 
 			Lua.getglobal(lua, func);
 			var type:Int = Lua.type(lua, -1);
 
 			if (type != Lua.LUA_TFUNCTION) {
-				if (type > Lua.LUA_TNIL)
+				if (type == Lua.LUA_TNIL)
+					_missingFuncs.set(func, true);
+				else if (type > Lua.LUA_TNIL)
 					luaTrace("ERROR (" + func + "): attempt to call a " + LuaUtils.typeToString(type) + " value", false, false, FlxColor.RED);
 
 				Lua.pop(lua, 1);
@@ -1627,19 +1630,17 @@ class FunkinLua {
 			for (arg in args) Convert.toLua(lua, arg);
 			var status:Int = Lua.pcall(lua, args.length, 1, 0);
 
-			// Checks if it's not successful, then show a error.
 			if (status != Lua.LUA_OK) {
 				var error:String = getErrorMessage(status);
 				luaTrace("ERROR (" + func + "): " + error, false, false, FlxColor.RED);
 				return LuaUtils.Function_Continue;
 			}
 
-			// If successful, pass and then return the result.
 			var result:Dynamic = cast Convert.fromLua(lua, -1);
 			if (result == null) result = LuaUtils.Function_Continue;
 
 			Lua.pop(lua, 1);
-			if(closed) stop();
+			if (closed) stop();
 			return result;
 		}
 		catch (e:Dynamic) {
@@ -1649,24 +1650,32 @@ class FunkinLua {
 	}
 
 	public function set(variable:String, data:Dynamic) {
-		if(lua == null) {
+		if (lua == null) {
 			return;
 		}
 
+		if (_missingFuncs.exists(variable))
+			_missingFuncs.remove(variable);
 		Convert.toLua(lua, data);
 		Lua.setglobal(lua, variable);
 	}
 
+	public inline function clearFuncCache():Void {
+		_missingFuncs.clear();
+	}
+
 	public function stop() {
 		closed = true;
+		_missingFuncs.clear();
+		callbacks.clear();
 
-		if(lua == null) {
+		if (lua == null) {
 			return;
 		}
 		Lua.close(lua);
 		lua = null;
 		#if HSCRIPT_ALLOWED
-		if(hscript != null)
+		if (hscript != null)
 		{
 			hscript.destroy();
 			hscript = null;

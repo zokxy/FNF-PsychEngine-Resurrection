@@ -45,23 +45,34 @@ class JudgementSystem extends FlxSpriteGroup
 			Paths.image(uiFolder + 'num' + i + PlayState.uiPostfix);
 	}
 
+	function acquirePopUp(graphicPath:String, antialias:Bool):FlxSprite
+	{
+		var spr:FlxSprite = recycle(FlxSprite);
+		FlxTween.cancelTweensOf(spr);
+		spr.loadGraphic(Paths.image(graphicPath));
+		spr.alpha = 1;
+		spr.angle = 0;
+		spr.scale.set(1, 1);
+		spr.velocity.set(0, 0);
+		spr.acceleration.set(0, 0);
+		spr.antialiasing = antialias;
+		spr.visible = !ClientPrefs.data.hideHud;
+		return spr;
+	}
+
 	public function popUpScore(note:Note, playbackRate:Float, cpuControlled:Bool, onSplash:Note->Void, onRecalc:Void->Void):Void
 	{
 		var noteDiff:Float = Math.abs(note.strumTime - Conductor.songPosition + ClientPrefs.data.ratingOffset);
 
 		if (!ClientPrefs.data.comboStacking && members.length > 0)
 		{
-			var i:Int = members.length - 1;
-			while (i >= 0)
+			for (spr in members)
 			{
-				var spr = members[i];
-				if (spr != null)
+				if (spr != null && spr.alive)
 				{
 					FlxTween.cancelTweensOf(spr);
-					remove(spr, true);
-					spr.destroy();
+					spr.kill();
 				}
-				--i;
 			}
 		}
 
@@ -100,29 +111,23 @@ class JudgementSystem extends FlxSpriteGroup
 			antialias = !PlayState.isPixelStage;
 		}
 
-		var rating:FlxSprite = new FlxSprite().loadGraphic(Paths.image(uiFolder + daRating.image + PlayState.uiPostfix));
+		var rating:FlxSprite = acquirePopUp(uiFolder + daRating.image + PlayState.uiPostfix, antialias);
 		rating.screenCenter();
 		rating.x = placement - 40 + ClientPrefs.data.comboOffset[0];
 		rating.y -= 60 + ClientPrefs.data.comboOffset[1];
 		rating.acceleration.y = 550 * playbackRate * playbackRate;
-		rating.velocity.y -= FlxG.random.int(140, 175) * playbackRate;
-		rating.velocity.x -= FlxG.random.int(0, 10) * playbackRate;
+		rating.velocity.y = -FlxG.random.int(140, 175) * playbackRate;
+		rating.velocity.x = -FlxG.random.int(0, 10) * playbackRate;
 		rating.visible = (!ClientPrefs.data.hideHud && showRating);
-		rating.antialiasing = antialias;
 
 		if (!PlayState.isPixelStage)
 			rating.setGraphicSize(Std.int(rating.width * 0.7));
 		else
 			rating.setGraphicSize(Std.int(rating.width * PlayState.daPixelZoom * 0.85));
 		rating.updateHitbox();
-		add(rating);
 
 		FlxTween.tween(rating, {alpha: 0}, 0.2 / playbackRate, {
-			onComplete: function(_)
-			{
-				remove(rating, true);
-				rating.destroy();
-			},
+			onComplete: function(_) rating.kill(),
 			startDelay: Conductor.crochet * 0.001 / playbackRate
 		});
 
@@ -133,7 +138,7 @@ class JudgementSystem extends FlxSpriteGroup
 			var separatedScore:String = Std.string(combo).lpad('0', 3);
 			for (i in 0...separatedScore.length)
 			{
-				var numScore:FlxSprite = new FlxSprite().loadGraphic(Paths.image(uiFolder + 'num' + Std.parseInt(separatedScore.charAt(i)) + PlayState.uiPostfix));
+				var numScore:FlxSprite = acquirePopUp(uiFolder + 'num' + Std.parseInt(separatedScore.charAt(i)) + PlayState.uiPostfix, antialias);
 				numScore.screenCenter();
 				numScore.x = placement + (43 * daLoop) - 90 + ClientPrefs.data.comboOffset[2];
 				numScore.y += 80 - ClientPrefs.data.comboOffset[3];
@@ -143,18 +148,11 @@ class JudgementSystem extends FlxSpriteGroup
 				numScore.updateHitbox();
 
 				numScore.acceleration.y = FlxG.random.int(200, 300) * playbackRate * playbackRate;
-				numScore.velocity.y -= FlxG.random.int(140, 160) * playbackRate;
+				numScore.velocity.y = -FlxG.random.int(140, 160) * playbackRate;
 				numScore.velocity.x = FlxG.random.float(-5, 5) * playbackRate;
-				numScore.visible = !ClientPrefs.data.hideHud;
-				numScore.antialiasing = antialias;
-				add(numScore);
 
 				FlxTween.tween(numScore, {alpha: 0}, 0.2 / playbackRate, {
-					onComplete: function(_)
-					{
-						remove(numScore, true);
-						numScore.destroy();
-					},
+					onComplete: function(_) numScore.kill(),
 					startDelay: Conductor.crochet * 0.002 / playbackRate
 				});
 
@@ -165,32 +163,32 @@ class JudgementSystem extends FlxSpriteGroup
 
 		if (showCombo)
 		{
-			var comboSpr:FlxSprite = new FlxSprite().loadGraphic(Paths.image(uiFolder + 'combo' + PlayState.uiPostfix));
+			var comboSpr:FlxSprite = acquirePopUp(uiFolder + 'combo' + PlayState.uiPostfix, antialias);
 			comboSpr.screenCenter();
 			comboSpr.x = xThing > 0 ? xThing + 50 : placement + ClientPrefs.data.comboOffset[0];
 			comboSpr.y += 60 - ClientPrefs.data.comboOffset[1];
 			comboSpr.acceleration.y = FlxG.random.int(200, 300) * playbackRate * playbackRate;
-			comboSpr.velocity.y -= FlxG.random.int(140, 160) * playbackRate;
-			comboSpr.velocity.x += FlxG.random.int(1, 10) * playbackRate;
-			comboSpr.visible = !ClientPrefs.data.hideHud;
-			comboSpr.antialiasing = antialias;
+			comboSpr.velocity.y = -FlxG.random.int(140, 160) * playbackRate;
+			comboSpr.velocity.x = FlxG.random.int(1, 10) * playbackRate;
 
 			if (!PlayState.isPixelStage)
 				comboSpr.setGraphicSize(Std.int(comboSpr.width * 0.7));
 			else
 				comboSpr.setGraphicSize(Std.int(comboSpr.width * PlayState.daPixelZoom * 0.85));
 			comboSpr.updateHitbox();
-			add(comboSpr);
 
 			FlxTween.tween(comboSpr, {alpha: 0}, 0.2 / playbackRate, {
-				onComplete: function(_)
-				{
-					remove(comboSpr, true);
-					comboSpr.destroy();
-				},
+				onComplete: function(_) comboSpr.kill(),
 				startDelay: Conductor.crochet * 0.002 / playbackRate
 			});
 		}
+	}
+
+	override function destroy():Void
+	{
+		for (spr in members)
+			if (spr != null) FlxTween.cancelTweensOf(spr);
+		super.destroy();
 	}
 
 	public function recalculate():Void

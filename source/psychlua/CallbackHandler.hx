@@ -3,6 +3,7 @@ package psychlua;
 
 class CallbackHandler
 {
+	static final _emptyArgs:Array<Dynamic> = [];
 	public static inline function call(l:State, fname:String):Int
 	{
 		try
@@ -34,7 +35,7 @@ class CallbackHandler
 			if(cbf == null) return 0;
 
 			var nparams:Int = Lua.gettop(l);
-			var args:Array<Dynamic> = [];
+			var args:Array<Dynamic> = (nparams == 0) ? _emptyArgs : [for (i in 0...nparams) Convert.fromLua(l, i + 1)];
 
 			for (i in 0...nparams) {
 				args[i] = Convert.fromLua(l, i + 1);

@@ -22,6 +22,7 @@ import js.html.*;
 #end
 
 import backend.Paths;
+import backend.MemoryManager;
 import backend.Controls;
 import backend.CoolUtil;
 import backend.MusicBeatState;

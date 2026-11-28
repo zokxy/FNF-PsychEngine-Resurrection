@@ -27,6 +27,8 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 	public var skipArrowStartTween:Bool = false;
 	public var totalColumns:Int = 4;
 
+	var _unspawnIndex:Int = 0;
+
 	public function new()
 	{
 		super();
@@ -37,6 +39,15 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 		add(strumLineNotes);
 		add(notes);
 		add(grpNoteSplashes);
+	}
+
+	inline function flushUnspawned():Void
+	{
+		if (_unspawnIndex > 0)
+		{
+			unspawnNotes.splice(0, _unspawnIndex);
+			_unspawnIndex = 0;
+		}
 	}
 
 	public function addStrumLine(isPlayer:Bool = false, ?characters:Array<Character>, ?x:Null<Float>, ?y:Null<Float>, keysCount:Int = 4, scaleMult:Float = 1):StrumLine
@@ -132,9 +143,10 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 	{
 		if (lineID < 0 || lineID >= strumLines.length) return;
 		var line:StrumLine = strumLines[lineID];
-		for (n in unspawnNotes)
+		for (i in _unspawnIndex...unspawnNotes.length)
 		{
-			if (filter(n))
+			var n:Note = unspawnNotes[i];
+			if (n != null && filter(n))
 			{
 				n.strumLineID = lineID;
 				n.mustPress = line.isPlayer;
@@ -152,11 +164,15 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 
 	public function loadChart(songData:SwagSong, playbackRate:Float):Array<String>
 	{
+		_unspawnIndex = 0;
 		var noteTypes:Array<String> = [];
 		var oldNote:Note = null;
 		var sectionsData:Array<SwagSection> = songData.notes;
 		var ghostNotesCaught:Int = 0;
 		var daBpm:Float = Conductor.bpm;
+
+		var ghostLookup:Map<String, Array<Note>> = new Map();
+		var removedNotes:Map<Note, Bool> = new Map();
 
 		for (section in sectionsData)
 		{
@@ -180,25 +196,31 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 				var line:StrumLine = strumLines[lineID];
 				var gottaHitNote:Bool = line.isPlayer;
 
-				if (i != 0)
+				var bucketKey:String = '$lineID:$noteColumn:${Math.round(noteTime)}';
+				var bucket:Array<Note> = ghostLookup.get(bucketKey);
+				if (i != 0 && bucket != null)
 				{
-					for (evilNote in unspawnNotes)
+					var bi:Int = bucket.length - 1;
+					while (bi >= 0)
 					{
-						var matches:Bool = (noteColumn == evilNote.noteData && lineID == evilNote.strumLineID && evilNote.noteType == noteType);
-						if (matches && Math.abs(noteTime - evilNote.strumTime) < FlxMath.EPSILON)
+						var evilNote:Note = bucket[bi];
+						if (evilNote.noteType == noteType && Math.abs(noteTime - evilNote.strumTime) < FlxMath.EPSILON)
 						{
 							if (evilNote.tail.length > 0)
 							{
 								for (tail in evilNote.tail)
 								{
+									removedNotes.set(tail, true);
 									tail.destroy();
-									unspawnNotes.remove(tail);
 								}
 							}
+							if (oldNote == evilNote) oldNote = null;
+							removedNotes.set(evilNote, true);
 							evilNote.destroy();
-							unspawnNotes.remove(evilNote);
+							bucket.splice(bi, 1);
 							ghostNotesCaught++;
 						}
+						bi--;
 					}
 				}
 
@@ -212,6 +234,13 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 				swagNote.noteType = noteType;
 				swagNote.scrollFactor.set();
 				unspawnNotes.push(swagNote);
+
+				if (bucket == null)
+				{
+					bucket = [];
+					ghostLookup.set(bucketKey, bucket);
+				}
+				bucket.push(swagNote);
 
 				var curStepCrochet:Float = 60 / daBpm * 1000 / 4.0;
 				final roundSus:Int = Math.round(swagNote.sustainLength / curStepCrochet);
@@ -263,6 +292,9 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 			}
 		}
 
+		if (ghostNotesCaught > 0)
+			unspawnNotes = [for (n in unspawnNotes) if (!removedNotes.exists(n)) n];
+
 		trace('["${songData.song.toUpperCase()}" CHART INFO]: Ghost Notes Cleared: $ghostNotesCaught');
 		unspawnNotes.sort(PlayState.sortByTime);
 		return noteTypes;
@@ -283,25 +315,41 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 	{
 		for (note in notes.members)
 			if (note != null) note.resizeByRatio(ratio);
-		for (note in unspawnNotes)
+		for (i in _unspawnIndex...unspawnNotes.length)
+		{
+			var note:Note = unspawnNotes[i];
 			if (note != null) note.resizeByRatio(ratio);
+		}
 	}
 
 	public function spawnUpcoming(songPos:Float, songSpeed:Float, playbackRate:Float, onSpawn:Note->Void):Void
 	{
-		if (unspawnNotes[0] == null) return;
-
-		var time:Float = spawnTime * playbackRate;
-		if (songSpeed < 1) time /= songSpeed;
-		if (unspawnNotes[0].multSpeed < 1) time /= unspawnNotes[0].multSpeed;
-
-		while (unspawnNotes.length > 0 && unspawnNotes[0].strumTime - songPos < time)
+		while (_unspawnIndex < unspawnNotes.length)
 		{
-			var dunceNote:Note = unspawnNotes.shift();
+			var dunceNote:Note = unspawnNotes[_unspawnIndex];
+			if (dunceNote == null)
+			{
+				_unspawnIndex++;
+				continue;
+			}
+
+			var line:StrumLine = getStrumLine(dunceNote);
+			var lineSpeed:Float = (line != null && line.scrollSpeed != null) ? line.scrollSpeed : songSpeed;
+			var time:Float = spawnTime * playbackRate;
+			if (lineSpeed < 1) time /= lineSpeed;
+			if (dunceNote.multSpeed < 1) time /= dunceNote.multSpeed;
+
+			if (dunceNote.strumTime - songPos >= time)
+				break;
+
 			notes.insert(0, dunceNote);
 			dunceNote.spawned = true;
 			onSpawn(dunceNote);
+			_unspawnIndex++;
 		}
+
+		if (_unspawnIndex >= 32 || (_unspawnIndex > 0 && _unspawnIndex >= unspawnNotes.length))
+			flushUnspawned();
 	}
 
 	function syncNoteScale(note:Note, line:StrumLine, strum:StrumNote):Void
@@ -336,11 +384,14 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 
 		if (!startedCountdown)
 		{
-			notes.forEachAlive(function(daNote:Note)
+			for (daNote in notes.members)
 			{
-				daNote.canBeHit = false;
-				daNote.wasGoodHit = false;
-			});
+				if (daNote != null && daNote.alive)
+				{
+					daNote.canBeHit = false;
+					daNote.wasGoodHit = false;
+				}
+			}
 			return;
 		}
 
@@ -398,6 +449,7 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 
 	public function clearBefore(time:Float):Void
 	{
+		flushUnspawned();
 		var i:Int = unspawnNotes.length - 1;
 		while (i >= 0)
 		{
@@ -443,9 +495,13 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 			}
 			--i;
 		}
-		for (n in unspawnNotes)
+		for (idx in _unspawnIndex...unspawnNotes.length)
+		{
+			var n:Note = unspawnNotes[idx];
 			if (n != null) n.destroy();
+		}
 		unspawnNotes = [];
+		_unspawnIndex = 0;
 	}
 
 	public function invalidate(note:Note):Void
@@ -464,7 +520,7 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 	{
 		var splash:NoteSplash = new NoteSplash();
 		grpNoteSplashes.add(splash);
-		splash.alpha = 0.000001;
+		splash.kill();
 	}
 
 	public function spawnSplashOnNote(note:Note):Void
