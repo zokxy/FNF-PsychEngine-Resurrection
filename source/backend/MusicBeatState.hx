@@ -2,6 +2,9 @@ package backend;
 
 import flixel.FlxState;
 import backend.PsychCamera;
+#if debug
+import backend.ui.PsychUIInputText;
+#end
 
 class MusicBeatState extends FlxState
 {
@@ -14,6 +17,9 @@ class MusicBeatState extends FlxState
 	private var curDecStep:Float = 0;
 	private var curDecBeat:Float = 0;
 	public var scripts:StateScriptManager;
+	public var allowStateScripts:Null<Bool> = null;
+	var _scriptsPostCalled:Bool = false;
+
 	public var controls(get, never):Controls;
 	private function get_controls()
 	{
@@ -26,20 +32,30 @@ class MusicBeatState extends FlxState
 	public static function getVariables()
 		return getState().variables;
 
-	override function create() {
+	override function create()
+	{
 		var skip:Bool = FlxTransitionableState.skipNextTransOut;
 		#if MODS_ALLOWED Mods.updatedOnState = false; #end
 
-		if(!_psychCameraInitialized) initPsychCamera();
+		if (!_psychCameraInitialized) initPsychCamera();
 
 		super.create();
-		FlxG.signals.postStateSwitch.addOnce(initStateScripts);
+		initStateScripts();
+		FlxG.signals.postStateSwitch.addOnce(callStateScriptsPost);
 
-		if(!skip) {
+		if (!skip)
 			openSubState(new CustomFadeTransition(0.5, true));
-		}
 		FlxTransitionableState.skipNextTransOut = false;
 		timePassedOnState = 0;
+	}
+
+	function shouldLoadStateScripts():Bool
+	{
+		if (allowStateScripts != null) return allowStateScripts;
+		var clsName:String = Type.getClassName(Type.getClass(this));
+		if (clsName == 'states.LoadingState' || clsName.startsWith('states.editors.'))
+			return false;
+		return true;
 	}
 
 	function getScriptName():String
@@ -53,10 +69,16 @@ class MusicBeatState extends FlxState
 
 	function initStateScripts():Void
 	{
-		if (scripts != null) return;
+		if (scripts != null || !shouldLoadStateScripts()) return;
 		scripts = new StateScriptManager(this, getScriptName(), false, getScriptExtraVars());
 		scripts.load();
 		scripts.call('onCreate');
+	}
+
+	function callStateScriptsPost():Void
+	{
+		if (_scriptsPostCalled || scripts == null) return;
+		_scriptsPostCalled = true;
 		scripts.call('onCreatePost');
 	}
 
@@ -66,25 +88,34 @@ class MusicBeatState extends FlxState
 		FlxG.cameras.reset(camera);
 		FlxG.cameras.setDefaultDrawTarget(camera, true);
 		_psychCameraInitialized = true;
-		//trace('initialized psych camera ' + Sys.cpuTime());
 		return camera;
 	}
 
 	public static var timePassedOnState:Float = 0;
 	override function update(elapsed:Float)
 	{
-		//everyStep();
 		var oldStep:Int = curStep;
-		if (subState == null && FlxG.keys.justPressed.F5)
+
+		#if debug
+		if (subState == null && PsychUIInputText.focusOn == null && FlxG.keys.justPressed.F5)
 		{
 			if (FlxG.keys.pressed.SHIFT)
 			{
 				MusicBeatState.resetState();
 				return;
 			}
-			if (scripts != null) scripts.reload();
+			if (scripts != null) scripts.requestReload();
 		}
-		if (scripts != null) scripts.call('onUpdate', [elapsed]);
+		#end
+
+		if (scripts != null)
+		{
+			if (!_scriptsPostCalled) callStateScriptsPost();
+			scripts.flushReload();
+			if (scripts.call('onUpdate', [elapsed]) == StateScript.Function_Stop)
+				return;
+		}
+
 		timePassedOnState += elapsed;
 
 		updateCurStep();
@@ -92,10 +123,10 @@ class MusicBeatState extends FlxState
 
 		if (oldStep != curStep)
 		{
-			if(curStep > 0)
+			if (curStep > 0)
 				stepHit();
 
-			if(PlayState.SONG != null)
+			if (PlayState.SONG != null)
 			{
 				if (oldStep < curStep)
 					updateSection();
@@ -104,20 +135,24 @@ class MusicBeatState extends FlxState
 			}
 		}
 
-		if(FlxG.save.data != null) FlxG.save.data.fullscreen = FlxG.fullscreen;
-		
+		if (FlxG.save.data != null) FlxG.save.data.fullscreen = FlxG.fullscreen;
+
 		stagesFunc(function(stage:BaseStage) {
 			stage.update(elapsed);
 		});
 
 		super.update(elapsed);
-		if (scripts != null) scripts.call('onUpdatePost', [elapsed]);
+		if (scripts != null)
+		{
+			scripts.call('onUpdatePost', [elapsed]);
+			scripts.flushReload();
+		}
 	}
 
 	private function updateSection():Void
 	{
-		if(stepsToDo < 1) stepsToDo = Math.round(getBeatsOnSection() * 4);
-		while(curStep >= stepsToDo)
+		if (stepsToDo < 1) stepsToDo = Math.round(getBeatsOnSection() * 4);
+		while (curStep >= stepsToDo)
 		{
 			curSection++;
 			var beats:Float = getBeatsOnSection();
@@ -128,7 +163,7 @@ class MusicBeatState extends FlxState
 
 	private function rollbackSection():Void
 	{
-		if(curStep < 0) return;
+		if (curStep < 0) return;
 
 		var lastSection:Int = curSection;
 		curSection = 0;
@@ -138,19 +173,18 @@ class MusicBeatState extends FlxState
 			if (PlayState.SONG.notes[i] != null)
 			{
 				stepsToDo += Math.round(getBeatsOnSection() * 4);
-				if(stepsToDo > curStep) break;
-				
+				if (stepsToDo > curStep) break;
 				curSection++;
 			}
 		}
 
-		if(curSection > lastSection) sectionHit();
+		if (curSection > lastSection) sectionHit();
 	}
 
 	private function updateBeat():Void
 	{
 		curBeat = Math.floor(curStep / 4);
-		curDecBeat = curDecStep/4;
+		curDecBeat = curDecStep / 4;
 	}
 
 	private function updateCurStep():Void
@@ -162,44 +196,49 @@ class MusicBeatState extends FlxState
 		curStep = lastChange.stepTime + Math.floor(shit);
 	}
 
-	public static function switchState(nextState:FlxState = null) {
-		if(nextState == null) nextState = FlxG.state;
-		if(nextState == FlxG.state)
+	public static function switchState(nextState:FlxState = null)
+	{
+		if (nextState == null) nextState = FlxG.state;
+		if (nextState == FlxG.state)
 		{
 			resetState();
 			return;
 		}
 
-		if(FlxTransitionableState.skipNextTransIn) FlxG.switchState(nextState);
+		if (FlxTransitionableState.skipNextTransIn) FlxG.switchState(nextState);
 		else startTransition(nextState);
 		FlxTransitionableState.skipNextTransIn = false;
 	}
 
-	public static function resetState() {
-		if(FlxTransitionableState.skipNextTransIn) FlxG.resetState();
+	public static function resetState()
+	{
+		if (FlxTransitionableState.skipNextTransIn) FlxG.resetState();
 		else startTransition();
 		FlxTransitionableState.skipNextTransIn = false;
 	}
 
-	// Custom made Trans in
 	public static function startTransition(nextState:FlxState = null)
 	{
-		if(nextState == null)
+		if (nextState == null)
 			nextState = FlxG.state;
 
 		FlxG.state.openSubState(new CustomFadeTransition(0.5, false));
-		if(nextState == FlxG.state)
+		if (nextState == FlxG.state)
 			CustomFadeTransition.finishCallback = function() FlxG.resetState();
 		else
 			CustomFadeTransition.finishCallback = function() FlxG.switchState(nextState);
 	}
 
-	public static function getState():MusicBeatState {
+	public static function getState():MusicBeatState
+	{
 		return cast (FlxG.state, MusicBeatState);
 	}
 
 	public function stepHit():Void
 	{
+		if (scripts != null && scripts.call('onStepHit', [curStep]) == StateScript.Function_Stop)
+			return;
+
 		stagesFunc(function(stage:BaseStage) {
 			stage.curStep = curStep;
 			stage.curDecStep = curDecStep;
@@ -208,44 +247,46 @@ class MusicBeatState extends FlxState
 
 		if (curStep % 4 == 0)
 			beatHit();
-		if (scripts != null) scripts.call('onStepHit', [curStep]);
 	}
 
 	public var stages:Array<BaseStage> = [];
 	public function beatHit():Void
 	{
-		//trace('Beat: ' + curBeat);
+		if (scripts != null && scripts.call('onBeatHit', [curBeat]) == StateScript.Function_Stop)
+			return;
+
 		stagesFunc(function(stage:BaseStage) {
 			stage.curBeat = curBeat;
 			stage.curDecBeat = curDecBeat;
 			stage.beatHit();
 		});
-		if (scripts != null) scripts.call('onBeatHit', [curBeat]);
 	}
 
 	public function sectionHit():Void
 	{
-		//trace('Section: ' + curSection + ', Beat: ' + curBeat + ', Step: ' + curStep);
+		if (scripts != null && scripts.call('onSectionHit', [curSection]) == StateScript.Function_Stop)
+			return;
+
 		stagesFunc(function(stage:BaseStage) {
 			stage.curSection = curSection;
 			stage.sectionHit();
 		});
-		if (scripts != null) scripts.call('onSectionHit', [curSection]);
 	}
 
 	function stagesFunc(func:BaseStage->Void)
 	{
 		for (stage in stages)
-			if(stage != null && stage.exists && stage.active)
+			if (stage != null && stage.exists && stage.active)
 				func(stage);
 	}
 
 	function getBeatsOnSection()
 	{
 		var val:Null<Float> = 4;
-		if(PlayState.SONG != null && PlayState.SONG.notes[curSection] != null) val = PlayState.SONG.notes[curSection].sectionBeats;
+		if (PlayState.SONG != null && PlayState.SONG.notes[curSection] != null) val = PlayState.SONG.notes[curSection].sectionBeats;
 		return val == null ? 4 : val;
 	}
+
 	override function openSubState(SubState:flixel.FlxSubState)
 	{
 		if (scripts != null && !Std.isOfType(SubState, CustomFadeTransition))
@@ -264,7 +305,7 @@ class MusicBeatState extends FlxState
 
 	override function destroy()
 	{
-		FlxG.signals.postStateSwitch.remove(initStateScripts);
+		FlxG.signals.postStateSwitch.remove(callStateScriptsPost);
 		if (scripts != null)
 		{
 			scripts.destroy(false);

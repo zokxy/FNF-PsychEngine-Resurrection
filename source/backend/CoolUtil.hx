@@ -6,30 +6,36 @@ import flixel.math.FlxMath;
 
 class CoolUtil
 {
-	public static function checkForUpdates(url:String = null):String {
+	public static function checkForUpdates(url:String = null, ?onResult:String->Void):String
+	{
 		if (url == null || url.length == 0)
-			url = "https://raw.githubusercontent.com/ShadowMario/FNF-PsychEngine/main/gitVersion.txt";
+			url = "https://raw.githubusercontent.com/zokxy/FNF-PsychEngine-Resurrection/main/gitVersion.txt";
+
 		var version:String = states.MainMenuState.psychEngineVersion.trim();
-		if(ClientPrefs.data.checkForUpdates) {
-			trace('checking for updates...');
+		if (!ClientPrefs.data.checkForUpdates)
+			return version;
+
+		function runRequest():Void
+		{
 			var http = new haxe.Http(url);
-			http.onData = function (data:String)
+			http.onData = function(data:String)
 			{
 				var newVersion:String = data.split('\n')[0].trim();
-				trace('version online: $newVersion, your version: $version');
-				if(newVersion != version) {
-					trace('versions arent matching! please update');
-					version = newVersion;
-					http.onData = null;
-					http.onError = null;
-					http = null;
-				}
+				if (newVersion != version && onResult != null)
+					onResult(newVersion);
 			}
-			http.onError = function (error) {
-				trace('error: $error');
+			http.onError = function(error)
+			{
+				trace('Update check error: $error');
 			}
-			http.request();
+			try { http.request(); } catch (e:Dynamic) { trace('Update check failed: $e'); }
 		}
+
+		#if target.threaded
+		sys.thread.Thread.create(runRequest);
+		#else
+		runRequest();
+		#end
 		return version;
 	}
 	inline public static function quantize(f:Float, snap:Float){

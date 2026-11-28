@@ -25,10 +25,8 @@ class CustomSubstate extends MusicBeatSubstate
 			PlayState.instance.persistentUpdate = false;
 			PlayState.instance.persistentDraw = true;
 			PlayState.instance.paused = true;
-			if(FlxG.sound.music != null) {
-				FlxG.sound.music.pause();
-				PlayState.instance.vocals.pause();
-			}
+			if (PlayState.instance.songSync != null)
+				PlayState.instance.songSync.pause();
 		}
 		PlayState.instance.openSubState(new CustomSubstate(name));
 	}

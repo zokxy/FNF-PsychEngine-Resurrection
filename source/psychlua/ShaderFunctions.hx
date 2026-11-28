@@ -278,6 +278,8 @@ class ShaderFunctions
 			FunkinLua.luaTrace('Error on getting shader: Object $obj not found', false, false, FlxColor.RED);
 			return null;
 		}
+		if (target.shader == null || !Std.isOfType(target.shader, FlxRuntimeShader))
+			return null;
 		return cast (target.shader, FlxRuntimeShader);
 	}
 	#end

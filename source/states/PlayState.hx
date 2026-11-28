@@ -225,8 +225,8 @@ class PlayState extends MusicBeatState
 	inline function get_unspawnNotes() return noteManager.unspawnNotes;
 	inline function set_unspawnNotes(v:Array<Note>) return noteManager.unspawnNotes = v;
 	inline function get_strumLineNotes() return noteManager.strumLineNotes;
-	inline function get_opponentStrums() return noteManager.opponentLine.strums;
-	inline function get_playerStrums() return noteManager.playerLine.strums;
+	inline function get_opponentStrums() return (noteManager != null && noteManager.opponentLine != null) ? noteManager.opponentLine.strums : null;
+	inline function get_playerStrums() return (noteManager != null && noteManager.playerLine != null) ? noteManager.playerLine.strums : null;
 	inline function get_grpNoteSplashes() return noteManager.grpNoteSplashes;
 	inline function get_spawnTime() return noteManager.spawnTime;
 	inline function set_spawnTime(v:Float) return noteManager.spawnTime = v;
@@ -1243,7 +1243,11 @@ class PlayState extends MusicBeatState
 
 		curSong = songData.song;
 
-		songSync.load(songData, boyfriend.vocalsFile, dad.vocalsFile, playbackRate);
+		var extraVocals:Array<String> = [
+			for (line in noteManager.strumLines)
+				(line.characters != null && line.characters.length > 0 && line.characters[0] != null) ? line.characters[0].vocalsFile : ''
+		];
+		songSync.load(SONG, boyfriend.vocalsFile, dad.vocalsFile, playbackRate, extraVocals);
 
 		try
 		{
@@ -1424,11 +1428,11 @@ class PlayState extends MusicBeatState
 	override public function update(elapsed:Float)
 	{
 		cam.updateFollow(playbackRate, !inCutscene && !paused);
-		if(!inCutscene && !paused && !freezeCamera) {
+		if (!inCutscene && !paused) {
 			var idleAnim:Bool = (boyfriend.getAnimationName().startsWith('idle') || boyfriend.getAnimationName().startsWith('danceLeft') || boyfriend.getAnimationName().startsWith('danceRight'));
-			if(!startingSong && !endingSong && idleAnim) {
+			if (!startingSong && !endingSong && idleAnim) {
 				boyfriendIdleTime += elapsed;
-				if(boyfriendIdleTime >= 0.15) {
+				if (boyfriendIdleTime >= 0.15) {
 					boyfriendIdled = true;
 				}
 			} else {
@@ -1593,12 +1597,7 @@ class PlayState extends MusicBeatState
 		persistentUpdate = false;
 		paused = true;
 
-		if(FlxG.sound.music != null)
-			FlxG.sound.music.stop();
-		if(vocals != null)
-			vocals.pause();
-		if(opponentVocals != null)
-			opponentVocals.pause();
+		songSync.stop();
 
 		#if DISCORD_ALLOWED DiscordClient.resetClientID(); #end
 		MusicBeatState.switchState(new CharacterEditorState(SONG.player2));
@@ -1931,11 +1930,18 @@ class PlayState extends MusicBeatState
 		callOnScripts('onEvent', [eventName, value1, value2, strumTime]);
 	}
 
-	public function moveCameraSection(?sec:Null<Int>):Void {
-		if(sec == null) sec = curSection;
-		if(sec < 0) sec = 0;
+	public function moveCameraSection(?sec:Null<Int>):Void
+	{
+		if (sec == null) sec = curSection;
+		if (sec < 0) sec = 0;
 
-		if(SONG.notes[sec] == null) return;
+		if (SONG.notes[sec] == null) return;
+
+		if (SONG.notes[sec].cameraTarget != null)
+		{
+			focusStrumLine(SONG.notes[sec].cameraTarget);
+			return;
+		}
 
 		if (gf != null && SONG.notes[sec].gfSection)
 		{
@@ -1946,10 +1952,44 @@ class PlayState extends MusicBeatState
 
 		var isDad:Bool = (SONG.notes[sec].mustHitSection != true);
 		moveCamera(isDad);
-		if (isDad)
-			callOnScripts('onMoveCamera', ['dad']);
-		else
+		callOnScripts('onMoveCamera', [isDad ? 'dad' : 'boyfriend']);
+	}
+
+	public function focusStrumLine(lineID:Int):Void
+	{
+		var line:StrumLine = (noteManager != null && lineID >= 0 && lineID < noteManager.strumLines.length)
+			? noteManager.strumLines[lineID] : null;
+
+		var char:Character = (line != null && line.characters != null && line.characters.length > 0 && line.characters[0] != null)
+			? line.characters[0]
+			: (lineID == 1 ? boyfriend : dad);
+
+		if (char == null) return;
+
+		var lx:Float = (line != null && line.cameraOffset != null && line.cameraOffset.length > 0) ? line.cameraOffset[0] : 0;
+		var ly:Float = (line != null && line.cameraOffset != null && line.cameraOffset.length > 1) ? line.cameraOffset[1] : 0;
+
+		if (char == boyfriend)
+		{
+			cam.focus(boyfriend, -100, -100, [boyfriendCameraOffset[0] + lx, boyfriendCameraOffset[1] + ly], true);
 			callOnScripts('onMoveCamera', ['boyfriend']);
+		}
+		else if (char == dad)
+		{
+			cam.focus(dad, 150, -100, [opponentCameraOffset[0] + lx, opponentCameraOffset[1] + ly], false);
+			callOnScripts('onMoveCamera', ['dad']);
+		}
+		else if (char == gf)
+		{
+			cam.focus(gf, 0, 0, [girlfriendCameraOffset[0] + lx, girlfriendCameraOffset[1] + ly], false);
+			callOnScripts('onMoveCamera', ['gf']);
+		}
+		else
+		{
+			var baseX:Float = char.isPlayer ? -100 : 150;
+			cam.focus(char, baseX, -100, [lx, ly], char.isPlayer);
+			callOnScripts('onMoveCamera', [char.curCharacter]);
+		}
 	}
 	
 	public function moveCameraToGirlfriend()
@@ -2272,7 +2312,7 @@ class PlayState extends MusicBeatState
 	function noteMiss(daNote:Note):Void { //You didn't hit the key and let it go offscreen, also used by Hurt Notes
 		//Dupe note remove
 		notes.forEachAlive(function(note:Note) {
-			if (daNote != note && daNote.mustPress && daNote.noteData == note.noteData && daNote.isSustainNote == note.isSustainNote && Math.abs(daNote.strumTime - note.strumTime) < 1)
+			if (daNote != note && daNote.mustPress && daNote.strumLineID == note.strumLineID && daNote.noteData == note.noteData && daNote.isSustainNote == note.isSustainNote && Math.abs(daNote.strumTime - note.strumTime) < 1)
 				invalidateNote(note);
 		});
 
@@ -2353,24 +2393,34 @@ class PlayState extends MusicBeatState
 		RecalculateRating(true);
 
 		// play character anims
-		var char:Character = boyfriend;
-		if((note != null && note.gfNote) || (SONG.notes[curSection] != null && SONG.notes[curSection].gfSection)) char = gf;
-
-		if(char != null && (note == null || !note.noMissAnimation) && char.hasMissAnimations)
+		if (note == null || !note.noMissAnimation)
 		{
-			var postfix:String = '';
-			if(note != null) postfix = note.animSuffix;
+			var chars:Array<Character> = (note != null)
+				? getNoteCharacters(note, boyfriend)
+				: ((SONG.notes[curSection] != null && SONG.notes[curSection].gfSection && gf != null)
+					? [gf]
+					: (boyfriend != null ? [boyfriend] : []));
 
-			var animToPlay:String = singAnimations[Std.int(Math.abs(Math.min(singAnimations.length-1, direction)))] + 'miss' + postfix;
-			char.playAnim(animToPlay, true);
+			var postfix:String = (note != null) ? note.animSuffix : '';
+			var animToPlay:String = singAnimations[Std.int(Math.abs(Math.min(singAnimations.length - 1, direction)))] + 'miss' + postfix;
+			var playedNonGf:Bool = false;
 
-			if(char != gf && lastCombo > 5 && gf != null && gf.hasAnimation('sad'))
+			for (char in chars)
+			{
+				if (char != null && char.hasMissAnimations)
+				{
+					char.playAnim(animToPlay, true);
+					if (char != gf) playedNonGf = true;
+				}
+			}
+
+			if (playedNonGf && lastCombo > 5 && gf != null && gf.hasAnimation('sad'))
 			{
 				gf.playAnim('sad');
 				gf.specialAnim = true;
 			}
 		}
-		vocals.volume = 0;
+		songSync.setLineVolume(note != null ? note.strumLineID : 1, 0);
 	}
 
 	function getNoteCharacters(note:Note, fallback:Character):Array<Character>
@@ -2426,8 +2476,10 @@ class PlayState extends MusicBeatState
 				playSingAnim(char, note, animToPlay);
 		}
 
-		if (opponentVocals.length <= 0) vocals.volume = 1;
-		noteManager.getStrumLine(note).playAnim(Std.int(Math.abs(note.noteData)), Conductor.stepCrochet * 1.25 / 1000 / playbackRate);
+		songSync.setLineVolume(note.strumLineID, 1);
+		var line:StrumLine = noteManager.getStrumLine(note);
+		if (line != null)
+			line.playAnim(Std.int(Math.abs(note.noteData)), Conductor.stepCrochet * 1.25 / 1000 / playbackRate);
 		note.hitByOpponent = true;
 		
 		stagesFunc(function(stage:BaseStage) stage.opponentNoteHit(note));
@@ -2477,14 +2529,17 @@ class PlayState extends MusicBeatState
 			}
 
 			var line:StrumLine = noteManager.getStrumLine(note);
-			if (!cpuControlled && !line.cpuControlled)
+			if (line != null)
 			{
-				var spr = line.getStrum(note.noteData);
-				if (spr != null) spr.playAnim('confirm', true);
+				if (!cpuControlled && !line.cpuControlled)
+				{
+					var spr = line.getStrum(note.noteData);
+					if (spr != null) spr.playAnim('confirm', true);
+				}
+				else
+					line.playAnim(Std.int(Math.abs(note.noteData)), Conductor.stepCrochet * 1.25 / 1000 / playbackRate);
 			}
-			else
-				line.playAnim(Std.int(Math.abs(note.noteData)), Conductor.stepCrochet * 1.25 / 1000 / playbackRate);
-			vocals.volume = 1;
+			songSync.setLineVolume(note.strumLineID, 1);
 
 			if (!note.isSustainNote)
 			{
@@ -2499,15 +2554,18 @@ class PlayState extends MusicBeatState
 		}
 		else //Notes that count as a miss if you hit them (Hurt notes for example)
 		{
-			if(!note.noMissAnimation)
+			if (!note.noMissAnimation)
 			{
-				switch(note.noteType)
+				switch (note.noteType)
 				{
 					case 'Hurt Note':
-						if(boyfriend.hasAnimation('hurt'))
+						for (char in getNoteCharacters(note, boyfriend))
 						{
-							boyfriend.playAnim('hurt', true);
-							boyfriend.specialAnim = true;
+							if (char != null && char.hasAnimation('hurt'))
+							{
+								char.playAnim('hurt', true);
+								char.specialAnim = true;
+							}
 						}
 				}
 			}
@@ -2639,9 +2697,21 @@ class PlayState extends MusicBeatState
 
 	public function playerDance():Void
 	{
-		var anim:String = boyfriend.getAnimationName();
-		if(boyfriend.holdTimer > Conductor.stepCrochet * (0.0011 #if FLX_PITCH / FlxG.sound.music.pitch #end) * boyfriend.singDuration && anim.startsWith('sing') && !anim.endsWith('miss'))
-			boyfriend.dance();
+		var pitchDiv:Float = #if FLX_PITCH (FlxG.sound.music != null && FlxG.sound.music.pitch != 0 ? FlxG.sound.music.pitch : 1) #else 1 #end;
+		var stepLimit:Float = Conductor.stepCrochet * (0.0011 / pitchDiv);
+
+		function tryDance(char:Character):Void
+		{
+			if (char == null) return;
+			var anim:String = char.getAnimationName();
+			if (char.holdTimer > stepLimit * char.singDuration && anim.startsWith('sing') && !anim.endsWith('miss'))
+				char.dance();
+		}
+
+		tryDance(boyfriend);
+		for (extra in extraCharacters)
+			if (extra != null && extra.isPlayer)
+				tryDance(extra);
 	}
 
 	override function sectionHit()

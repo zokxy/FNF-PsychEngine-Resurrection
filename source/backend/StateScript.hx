@@ -48,11 +48,14 @@ class StateScript
 {
 	public static final Function_Stop:Dynamic = "##STATE_SCRIPT_STOP";
 	public static final Function_Continue:Dynamic = "##STATE_SCRIPT_CONTINUE";
+	public static var allowFileSystem:Bool = #if debug true #else false #end;
 
 	public var path:String;
 	public var target:FlxState;
 	public var active:Bool = true;
 	public var trackedObjects:Array<FlxBasic> = [];
+	public var trackedTweens:Array<FlxTween> = [];
+	public var trackedTimers:Array<FlxTimer> = [];
 
 	#if HSCRIPT_ALLOWED
 	public var iris:Iris;
@@ -86,12 +89,26 @@ class StateScript
 		catch (e:Dynamic)
 		{
 			active = false;
-			trace('[StateScript] Failed to load $path: $e');
+			Iris.error('Failed to load: $e', cast {fileName: path, showLine: false});
 			destroy(false);
 		}
 		#else
 		active = false;
 		#end
+	}
+
+	function trackTween(twn:FlxTween):FlxTween
+	{
+		if (twn != null && !trackedTweens.contains(twn))
+			trackedTweens.push(twn);
+		return twn;
+	}
+
+	function trackTimer(tmr:FlxTimer):FlxTimer
+	{
+		if (tmr != null && !trackedTimers.contains(tmr))
+			trackedTimers.push(tmr);
+		return tmr;
 	}
 
 	function bindGlobals():Void
@@ -123,6 +140,12 @@ class StateScript
 			trackedObjects.remove(obj);
 			return target.remove(obj, splice);
 		});
+		iris.set('trackTween', trackTween);
+		iris.set('trackTimer', trackTimer);
+		iris.set('startTimer', function(time:Float = 1, ?onComplete:FlxTimer->Void, loops:Int = 1):FlxTimer
+		{
+			return trackTimer(new FlxTimer().start(time, onComplete, loops));
+		});
 		iris.set('openSubState', function(sub:FlxSubState):Void target.openSubState(sub));
 		iris.set('closeSubState', function():Void target.closeSubState());
 		if (Std.isOfType(target, FlxSubState))
@@ -143,10 +166,27 @@ class StateScript
 		iris.set('FlxTypedGroup', FlxTypedGroup);
 		iris.set('FlxSpriteGroup', FlxSpriteGroup);
 		iris.set('FlxTimer', FlxTimer);
-		iris.set('FlxTween', FlxTween);
 		iris.set('FlxEase', FlxEase);
 		iris.set('FlxMath', FlxMath);
 		iris.set('FlxSound', FlxSound);
+		iris.set('FlxTween', {
+			PERSIST: FlxTweenType.PERSIST,
+			LOOPING: FlxTweenType.LOOPING,
+			PINGPONG: FlxTweenType.PINGPONG,
+			ONESHOT: FlxTweenType.ONESHOT,
+			BACKWARD: FlxTweenType.BACKWARD,
+			globalManager: FlxTween.globalManager,
+			tween: function(obj:Dynamic, values:Dynamic, duration:Float = 1, ?options:TweenOptions):FlxTween
+				return trackTween(FlxTween.tween(obj, values, duration, options)),
+			num: function(fromValue:Float, toValue:Float, duration:Float = 1, ?options:TweenOptions, ?tweenFunction:Float->Void):FlxTween
+				return trackTween(FlxTween.num(fromValue, toValue, duration, options, tweenFunction)),
+			color: function(sprite:FlxSprite, duration:Float = 1, fromColor:FlxColor, toColor:FlxColor, ?options:TweenOptions):FlxTween
+				return trackTween(FlxTween.color(sprite, duration, fromColor, toColor, options)),
+			angle: function(sprite:FlxSprite, fromAngle:Float, toAngle:Float, duration:Float = 1, ?options:TweenOptions):FlxTween
+				return trackTween(FlxTween.angle(sprite, fromAngle, toAngle, duration, options)),
+			cancelTweensOf: FlxTween.cancelTweensOf,
+			completeTweensOf: FlxTween.completeTweensOf
+		});
 
 		iris.set('FlxAxes', {X: FlxAxes.X, Y: FlxAxes.Y, XY: FlxAxes.XY});
 		iris.set('FlxTextAlign', {LEFT: FlxTextAlign.LEFT, CENTER: FlxTextAlign.CENTER, RIGHT: FlxTextAlign.RIGHT, JUSTIFY: FlxTextAlign.JUSTIFY});
@@ -203,8 +243,11 @@ class StateScript
 		iris.set('Reflect', Reflect);
 		iris.set('Type', Type);
 		#if sys
-		iris.set('File', File);
-		iris.set('FileSystem', FileSystem);
+		if (allowFileSystem)
+		{
+			iris.set('File', File);
+			iris.set('FileSystem', FileSystem);
+		}
 		#end
 		#end
 	}
@@ -239,11 +282,11 @@ class StateScript
 		}
 		catch (e:IrisError)
 		{
-			trace('[StateScript] IrisError in $path ($funcName): ${Printer.errorToString(e, false)}');
+			Iris.error(Printer.errorToString(e, false), cast {fileName: path, showLine: false});
 		}
 		catch (e:Dynamic)
 		{
-			trace('[StateScript] Error in $path ($funcName): $e');
+			Iris.error('Error in $funcName: $e', cast {fileName: path, showLine: false});
 		}
 		#end
 		return Function_Continue;
@@ -256,13 +299,26 @@ class StateScript
 
 		active = false;
 
+		for (twn in trackedTweens)
+			if (twn != null && !twn.finished) twn.cancel();
+		trackedTweens = [];
+
+		for (tmr in trackedTimers)
+			if (tmr != null && !tmr.finished) tmr.cancel();
+		trackedTimers = [];
+
 		if (removeTracked && target != null)
 		{
 			for (obj in trackedObjects)
 			{
 				if (obj == null) continue;
-				target.remove(obj, true);
-				obj.destroy();
+				var inState:Bool = target.members != null && target.members.contains(obj);
+				if (inState) target.remove(obj, true);
+				if (inState || obj.exists)
+				{
+					FlxTween.cancelTweensOf(obj);
+					try { obj.destroy(); } catch (_:Dynamic) {}
+				}
 			}
 		}
 		trackedObjects = [];

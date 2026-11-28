@@ -529,13 +529,12 @@ class Note extends FlxSprite
 		if(copyY)
 		{
 			y = strumY + offsetY + correctionOffset + Math.sin(angleDir) * distance;
-			if(myStrum.downScroll && isSustainNote)
+			if (myStrum.downScroll && isSustainNote)
 			{
-				if(PlayState.isPixelStage)
-				{
-					y -= PlayState.daPixelZoom * 9.5;
-				}
-				y -= (frameHeight * scale.y) - (Note.swagWidth / 2);
+				if (PlayState.isPixelStage)
+					y -= PlayState.daPixelZoom * 9.5 * lineScale;
+
+				y -= (frameHeight * scale.y) - (Note.swagWidth * lineScale / 2);
 			}
 		}
 	}

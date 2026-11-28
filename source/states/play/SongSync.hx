@@ -3,12 +3,15 @@ package states.play;
 import backend.Song.SwagSong;
 import backend.AudioSync;
 import flixel.sound.FlxSound;
+import flash.media.Sound;
 
 class SongSync
 {
 	public var inst:FlxSound;
 	public var vocals:FlxSound;
 	public var opponentVocals:FlxSound;
+	public var voiceTracks:Array<FlxSound> = [];
+	public var lineVoices:Array<FlxSound> = [];
 	public var length:Float = 0;
 	public var canResync:Bool = true;
 
@@ -16,31 +19,79 @@ class SongSync
 
 	public function new() {}
 
-	public function load(songData:SwagSong, bfVocals:String, dadVocals:String, rate:Float):Void
+	public function load(songData:SwagSong, bfVocals:String, dadVocals:String, rate:Float, ?extraCharVocals:Array<String>):Void
 	{
-		vocals = new FlxSound();
-		opponentVocals = new FlxSound();
-		try
-		{
-			if (songData.needsVoices)
-			{
-				var playerFile = (bfVocals == null || bfVocals.length < 1) ? 'Player' : bfVocals;
-				var playerVocals = Paths.voices(songData.song, playerFile);
-				vocals.loadEmbedded(playerVocals != null ? playerVocals : Paths.voices(songData.song));
+		voiceTracks = [];
+		lineVoices = [];
+		var trackCache:Map<String, FlxSound> = new Map();
 
-				var oppFile = (dadVocals == null || dadVocals.length < 1) ? 'Opponent' : dadVocals;
-				var oppVocals = Paths.voices(songData.song, oppFile);
-				if (oppVocals != null && oppVocals.length > 0) opponentVocals.loadEmbedded(oppVocals);
+		function getOrLoadVoice(suffix:String, fallbackToMain:Bool):FlxSound
+		{
+			if (suffix == null) return null;
+			var trimmed:String = suffix.trim();
+			if (trimmed == '-' || trimmed.toLowerCase() == 'none') return null;
+
+			var key:String = (trimmed.length > 0) ? trimmed.toLowerCase() : '__main__';
+			if (trackCache.exists(key))
+				return trackCache.get(key);
+
+			var snd:Sound = null;
+			try
+			{
+				snd = (trimmed.length > 0) ? Paths.voices(songData.song, trimmed) : Paths.voices(songData.song);
+				if ((snd == null || snd.length <= 0) && fallbackToMain && trimmed.length > 0)
+				{
+					key = '__main__';
+					if (trackCache.exists(key))
+						return trackCache.get(key);
+					snd = Paths.voices(songData.song);
+				}
+			}
+			catch (e:Dynamic) {}
+
+			if (snd == null || snd.length <= 0)
+				return null;
+
+			var track:FlxSound = new FlxSound();
+			track.loadEmbedded(snd);
+			#if FLX_PITCH
+			track.pitch = rate;
+			#end
+			FlxG.sound.list.add(track);
+			voiceTracks.push(track);
+			trackCache.set(key, track);
+			return track;
+		}
+
+		if (songData.needsVoices)
+		{
+			var playerFile:String = (bfVocals == null || bfVocals.length < 1) ? 'Player' : bfVocals;
+			var oppFile:String = (dadVocals == null || dadVocals.length < 1) ? 'Opponent' : dadVocals;
+			var lines = songData.strumLines;
+			var lineCount:Int = (lines != null && lines.length >= 2) ? lines.length : 2;
+
+			for (i in 0...lineCount)
+			{
+				var customSuffix:String = (lines != null && lines[i] != null) ? lines[i].vocalsSuffix : null;
+				var track:FlxSound = null;
+
+				if (customSuffix != null)
+					track = getOrLoadVoice(customSuffix, i == 1);
+				else if (i == 1)
+					track = getOrLoadVoice(playerFile, true);
+				else if (i == 0)
+					track = getOrLoadVoice(oppFile, false);
+				else if (extraCharVocals != null && i < extraCharVocals.length && extraCharVocals[i] != null && extraCharVocals[i].length > 0)
+					track = getOrLoadVoice(extraCharVocals[i], false);
+
+				lineVoices.push(track);
 			}
 		}
-		catch (e:Dynamic) {}
 
-		#if FLX_PITCH
-		vocals.pitch = rate;
-		opponentVocals.pitch = rate;
-		#end
-		FlxG.sound.list.add(vocals);
-		FlxG.sound.list.add(opponentVocals);
+		vocals = (lineVoices.length > 1 && lineVoices[1] != null) ? lineVoices[1] : new FlxSound();
+		opponentVocals = (lineVoices.length > 0 && lineVoices[0] != null) ? lineVoices[0] : new FlxSound();
+		if (!FlxG.sound.list.members.contains(vocals)) FlxG.sound.list.add(vocals);
+		if (!FlxG.sound.list.members.contains(opponentVocals)) FlxG.sound.list.add(opponentVocals);
 
 		inst = new FlxSound();
 		try
@@ -49,6 +100,21 @@ class SongSync
 		}
 		catch (e:Dynamic) {}
 		FlxG.sound.list.add(inst);
+	}
+
+	public function getLineVoice(lineID:Int):FlxSound
+	{
+		if (lineID >= 0 && lineID < lineVoices.length && lineVoices[lineID] != null)
+			return lineVoices[lineID];
+		if (vocals != null && vocals.length > 0 && (opponentVocals == null || opponentVocals.length <= 0))
+			return vocals;
+		return null;
+	}
+
+	public function setLineVolume(lineID:Int, vol:Float):Void
+	{
+		var track:FlxSound = getLineVoice(lineID);
+		if (track != null) track.volume = vol;
 	}
 
 	public function start(rate:Float, onComplete:Void->Void, startOnTime:Float, paused:Bool):Void
@@ -62,7 +128,7 @@ class SongSync
 		setTime(Math.max(0, startOnTime - 500) + Conductor.offset, rate);
 
 		if (paused) pause();
-		audioSync.resetClock(Conductor.songPosition, FlxG.sound.music);
+		audioSync.resetClock(FlxG.sound.music);
 	}
 
 	public function update(elapsed:Float, playbackRate:Float, isPlaying:Bool):Void
@@ -76,8 +142,7 @@ class SongSync
 		Conductor.songPosition = audioSync.update(
 			Conductor.songPosition,
 			FlxG.sound.music,
-			vocals,
-			opponentVocals,
+			voiceTracks,
 			playbackRate,
 			Conductor.offset
 		);
@@ -88,22 +153,21 @@ class SongSync
 		var audioTime:Float = time - Conductor.offset;
 		pause();
 
-		FlxG.sound.music.time = audioTime;
+		FlxG.sound.music.play(true, audioTime);
 		#if FLX_PITCH FlxG.sound.music.pitch = rate; #end
-		FlxG.sound.music.play();
 
-		syncVocal(vocals, audioTime, rate);
-		syncVocal(opponentVocals, audioTime, rate);
+		for (track in voiceTracks)
+			AudioSync.syncTrack(track, audioTime, rate);
+
 		Conductor.songPosition = time;
-		audioSync.resetClock(Conductor.songPosition, FlxG.sound.music);
+		audioSync.resetClock(FlxG.sound.music);
 	}
 
 	public function resync(playbackRate:Float):Void
 	{
 		Conductor.songPosition = audioSync.forceResync(
 			FlxG.sound.music,
-			vocals,
-			opponentVocals,
+			voiceTracks,
 			playbackRate,
 			Conductor.offset
 		);
@@ -112,8 +176,8 @@ class SongSync
 	public function setPitch(rate:Float):Void
 	{
 		#if FLX_PITCH
-		if (vocals != null) vocals.pitch = rate;
-		if (opponentVocals != null) opponentVocals.pitch = rate;
+		for (track in voiceTracks)
+			if (track != null) track.pitch = rate;
 		if (FlxG.sound.music != null) FlxG.sound.music.pitch = rate;
 		#end
 	}
@@ -121,42 +185,27 @@ class SongSync
 	public function pause():Void
 	{
 		if (FlxG.sound.music != null) FlxG.sound.music.pause();
-		if (vocals != null) vocals.pause();
-		if (opponentVocals != null) opponentVocals.pause();
+		for (track in voiceTracks)
+			if (track != null) track.pause();
 	}
 
 	public function stop():Void
 	{
 		if (FlxG.sound.music != null) FlxG.sound.music.stop();
-		if (vocals != null) vocals.stop();
-		if (opponentVocals != null) opponentVocals.stop();
+		for (track in voiceTracks)
+			if (track != null) track.stop();
 	}
 
 	public function muteAndPause():Void
 	{
 		if (FlxG.sound.music != null) FlxG.sound.music.volume = 0;
-		if (vocals != null)
+		for (track in voiceTracks)
 		{
-			vocals.volume = 0;
-			vocals.pause();
+			if (track != null)
+			{
+				track.volume = 0;
+				track.pause();
+			}
 		}
-		if (opponentVocals != null)
-		{
-			opponentVocals.volume = 0;
-			opponentVocals.pause();
-		}
-	}
-
-	function syncVocal(voc:FlxSound, time:Float, rate:Float):Void
-	{
-		if (voc == null) return;
-		if (time >= 0 && time < voc.length)
-		{
-			voc.time = time;
-			#if FLX_PITCH voc.pitch = rate; #end
-			voc.play();
-		}
-		else
-			voc.pause();
 	}
 }

@@ -208,7 +208,7 @@ class NoteSplash extends FlxSprite
 		setPosition(x, y);
 
 		if (babyArrow != null)
-			setPosition(babyArrow.x - Note.swagWidth * 0.95, babyArrow.y - Note.swagWidth); // To prevent it from being misplaced for one game tick
+			setPosition(babyArrow.x - Note.swagWidth * 0.95 * lineScale, babyArrow.y - Note.swagWidth * lineScale);
 
 		if (note != null)
 			noteData = note.noteData;
@@ -287,6 +287,15 @@ class NoteSplash extends FlxSprite
 			offset.x += offsets[0];
 			offset.y += offsets[1];
 		}
+		centerOrigin();
+		scale.set(config.scale * lineScale, config.scale * lineScale);
+		if (lineScale != 1)
+		{
+			offset.set(
+				offset.x * lineScale + origin.x * (1 - lineScale),
+				offset.y * lineScale + origin.y * (1 - lineScale)
+			);
+		}
 
 		animation.finishCallback = function(name:String) {
 			kill();
@@ -352,10 +361,10 @@ class NoteSplash extends FlxSprite
 		if (babyArrow != null)
 		{
 			if (copyX)
-				x = babyArrow.x - Note.swagWidth * 0.95;
+				x = babyArrow.x - Note.swagWidth * 0.95 * lineScale;
 
 			if (copyY)
-				y = babyArrow.y - Note.swagWidth;
+				y = babyArrow.y - Note.swagWidth * lineScale;
 		}
 		super.update(elapsed);
 	}

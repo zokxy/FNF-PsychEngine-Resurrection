@@ -44,6 +44,8 @@ typedef StrumLineData =
 	@:optional var downScroll:Null<Bool>;
 	@:optional var keysCount:Null<Int>;
 	@:optional var cpuControlled:Null<Bool>;
+	@:optional var cameraOffset:Array<Float>;
+	@:optional var vocalsSuffix:String;
 }
 
 typedef SwagSection =
@@ -55,6 +57,7 @@ typedef SwagSection =
 	@:optional var gfSection:Bool;
 	@:optional var bpm:Float;
 	@:optional var changeBPM:Bool;
+	@:optional var cameraTarget:Null<Int>;
 }
 
 class Song

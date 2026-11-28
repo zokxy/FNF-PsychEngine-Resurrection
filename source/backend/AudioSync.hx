@@ -6,7 +6,7 @@ import haxe.Timer;
 class AudioSync
 {
 	public var softDeadzoneMs:Float = 3.0;
-	public var softCorrectionFactor:Float = 0.35;
+	public var softCorrectionRate:Float = 10.0;
 	public var hardSnapMs:Float = 35.0;
 	public var vocalsDriftMs:Float = 25.0;
 	public var resyncCooldown:Float = 0.4;
@@ -14,21 +14,24 @@ class AudioSync
 	var lastStamp:Float = -1;
 	var lastMusicTime:Float = -1;
 	var lastResyncStamp:Float = -1;
+	var pendingDrift:Float = 0;
 
 	public function new() {}
 
-	public function resetClock(songPosition:Float, ?music:FlxSound):Void
+	public function resetClock(?music:FlxSound):Void
 	{
 		lastStamp = Timer.stamp();
 		lastMusicTime = music != null ? music.time : -1;
 		lastResyncStamp = -1;
+		pendingDrift = 0;
 	}
 
-	public function update(songPosition:Float, music:FlxSound, vocals:FlxSound, opponentVocals:FlxSound, playbackRate:Float, offset:Float = 0):Float
+	public function update(songPosition:Float, music:FlxSound, voiceTracks:Array<FlxSound>, playbackRate:Float, offset:Float = 0):Float
 	{
 		if (music == null || !music.playing)
 		{
 			lastStamp = Timer.stamp();
+			pendingDrift = 0;
 			return songPosition;
 		}
 
@@ -38,7 +41,15 @@ class AudioSync
 
 		var spike:Bool = dt < 0 || dt > 0.1;
 		if (!spike)
+		{
 			songPosition += dt * 1000.0 * playbackRate;
+			if (pendingDrift != 0)
+			{
+				var nextDrift:Float = CoolUtil.expLerp(pendingDrift, 0, softCorrectionRate, dt);
+				songPosition += pendingDrift - nextDrift;
+				pendingDrift = Math.abs(nextDrift) < 0.05 ? 0 : nextDrift;
+			}
+		}
 
 		var musicTime:Float = music.time;
 		var targetPos:Float = musicTime + offset;
@@ -49,51 +60,55 @@ class AudioSync
 			var drift:Float = targetPos - songPosition;
 			var absDrift:Float = Math.abs(drift);
 
-			if (spike || absDrift >= hardSnapMs * playbackRate)
+			if (spike || absDrift >= hardSnapMs)
 			{
 				songPosition = targetPos;
-				checkVocals(music, vocals, opponentVocals, playbackRate, now, true);
+				pendingDrift = 0;
+				checkVocals(music, voiceTracks, playbackRate, now, true);
 			}
 			else if (absDrift >= softDeadzoneMs)
 			{
-				songPosition += drift * softCorrectionFactor;
-				checkVocals(music, vocals, opponentVocals, playbackRate, now, false);
+				pendingDrift = drift;
+				checkVocals(music, voiceTracks, playbackRate, now, false);
 			}
 			else
 			{
-				checkVocals(music, vocals, opponentVocals, playbackRate, now, false);
+				pendingDrift = 0;
+				checkVocals(music, voiceTracks, playbackRate, now, false);
 			}
 		}
 
 		return songPosition;
 	}
 
-	public function checkVocals(music:FlxSound, vocals:FlxSound, opponentVocals:FlxSound, playbackRate:Float, now:Float, force:Bool = false):Bool
+	public function checkVocals(music:FlxSound, voiceTracks:Array<FlxSound>, playbackRate:Float, now:Float, force:Bool = false):Bool
 	{
+		if (voiceTracks == null || voiceTracks.length == 0)
+			return false;
 		if (!force && now - lastResyncStamp < resyncCooldown)
 			return false;
 
-		var maxDrift:Float = vocalsDriftMs * playbackRate;
 		var musicTime:Float = music.time;
-		var needVocals:Bool = false;
-		var needOpp:Bool = false;
+		var synced:Bool = false;
 
-		if (vocals != null && vocals.length > 0 && musicTime < vocals.length - 50)
-			needVocals = force || !vocals.playing || Math.abs(vocals.time - musicTime) > maxDrift;
+		for (track in voiceTracks)
+		{
+			if (track != null && track.length > 0 && musicTime < track.length - 50)
+			{
+				if (force || !track.playing || Math.abs(track.time - musicTime) > vocalsDriftMs)
+				{
+					syncTrack(track, musicTime, playbackRate);
+					synced = true;
+				}
+			}
+		}
 
-		if (opponentVocals != null && opponentVocals.length > 0 && musicTime < opponentVocals.length - 50)
-			needOpp = force || !opponentVocals.playing || Math.abs(opponentVocals.time - musicTime) > maxDrift;
-
-		if (!needVocals && !needOpp)
-			return false;
-
-		if (needVocals) syncTrack(vocals, musicTime, playbackRate);
-		if (needOpp) syncTrack(opponentVocals, musicTime, playbackRate);
-		lastResyncStamp = now;
-		return true;
+		if (synced)
+			lastResyncStamp = now;
+		return synced;
 	}
 
-	public function forceResync(music:FlxSound, vocals:FlxSound, opponentVocals:FlxSound, playbackRate:Float, offset:Float = 0):Float
+	public function forceResync(music:FlxSound, voiceTracks:Array<FlxSound>, playbackRate:Float, offset:Float = 0):Float
 	{
 		if (music == null) return 0;
 
@@ -104,12 +119,16 @@ class AudioSync
 		#end
 
 		var musicTime:Float = music.time;
-		syncTrack(vocals, musicTime, playbackRate);
-		syncTrack(opponentVocals, musicTime, playbackRate);
+		if (voiceTracks != null)
+		{
+			for (track in voiceTracks)
+				syncTrack(track, musicTime, playbackRate);
+		}
 
 		lastStamp = Timer.stamp();
 		lastMusicTime = musicTime;
 		lastResyncStamp = lastStamp;
+		pendingDrift = 0;
 		return musicTime + offset;
 	}
 
@@ -123,11 +142,9 @@ class AudioSync
 			return;
 		}
 
-		track.pause();
-		track.time = targetTime;
+		track.play(true, targetTime);
 		#if FLX_PITCH
 		track.pitch = playbackRate;
 		#end
-		track.play(false, targetTime);
 	}
 }

@@ -13,6 +13,7 @@ class StateScriptManager
 	public var isSubState:Bool;
 	public var extraVars:Map<String, Dynamic>;
 	public var scripts:Array<StateScript> = [];
+	public var pendingReload:Bool = false;
 
 	public function new(target:FlxState, scriptName:String, isSubState:Bool = false, ?extraVars:Map<String, Dynamic>)
 	{
@@ -32,7 +33,6 @@ class StateScriptManager
 			loadFromDirectory('scripts/global/', loaded);
 
 		var dirs:Array<String> = Mods.directoriesWithFile(Paths.getSharedPath(), baseFolder);
-		trace('[StateScript] Searching $scriptName in: $dirs');
 
 		for (rawDir in dirs)
 		{
@@ -80,15 +80,28 @@ class StateScriptManager
 		var script:StateScript = new StateScript(norm, target, extraVars);
 		if (script.active)
 		{
-			script.set('reloadScripts', reload);
+			script.set('reloadScripts', requestReload);
 			scripts.push(script);
 			trace('[StateScript] Loaded: $norm');
 		}
 	}
 	#end
 
+	public function requestReload():Void
+	{
+		pendingReload = true;
+	}
+
+	public function flushReload():Void
+	{
+		if (!pendingReload) return;
+		pendingReload = false;
+		reload();
+	}
+
 	public function reload():Void
 	{
+		pendingReload = false;
 		destroy(true);
 		load();
 		call('onCreate');
@@ -105,8 +118,11 @@ class StateScriptManager
 
 	public function call(funcName:String, ?args:Array<Dynamic>):Dynamic
 	{
+		if (scripts.length == 0) return StateScript.Function_Continue;
+
 		var ret:Dynamic = StateScript.Function_Continue;
-		for (script in scripts)
+		var list:Array<StateScript> = scripts.copy();
+		for (script in list)
 		{
 			if (script == null || !script.active) continue;
 			var val:Dynamic = script.call(funcName, args);
@@ -120,9 +136,11 @@ class StateScriptManager
 
 	public function destroy(removeTracked:Bool = false):Void
 	{
-		for (script in scripts)
+		pendingReload = false;
+		var list:Array<StateScript> = scripts.copy();
+		scripts = [];
+		for (script in list)
 			if (script != null)
 				script.destroy(removeTracked);
-		scripts = [];
 	}
 }

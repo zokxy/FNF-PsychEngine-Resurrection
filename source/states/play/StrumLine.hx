@@ -20,6 +20,8 @@ class StrumLine
 	public var scaleMult:Float = 1;
 	public var spacing:Float = Note.swagWidth;
 	public var scrollSpeed:Null<Float> = null;
+	public var cameraOffset:Array<Float> = [0, 0];
+	public var vocalsSuffix:String = null;
 	public var downScroll(default, set):Null<Bool> = null;
 	public var visible(default, set):Bool = true;
 
@@ -54,6 +56,8 @@ class StrumLine
 			if (data.strumPos.length > 1 && data.strumPos[1] >= 0)
 				customY = data.strumPos[1];
 		}
+		cameraOffset = (data.cameraOffset != null && data.cameraOffset.length >= 2) ? [data.cameraOffset[0], data.cameraOffset[1]] : [0, 0];
+		vocalsSuffix = data.vocalsSuffix;
 	}
 
 	public function generate(targetGroup:FlxTypedGroup<StrumNote>, isStoryMode:Bool, skipTween:Bool):Void

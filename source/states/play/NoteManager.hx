@@ -480,28 +480,9 @@ class NoteManager extends FlxTypedGroup<FlxBasic>
 	public function spawnSplash(x:Float = 0, y:Float = 0, ?data:Int = 0, ?note:Note, ?strum:StrumNote, lineScale:Float = 1):Void
 	{
 		var splash:NoteSplash = grpNoteSplashes.recycle(NoteSplash);
-		if (splash.lineScale != 1)
-		{
-			splash.scale.x /= splash.lineScale;
-			splash.scale.y /= splash.lineScale;
-			splash.lineScale = 1;
-		}
-
+		splash.lineScale = lineScale;
 		splash.babyArrow = strum;
 		splash.spawnSplashNote(x, y, data, note);
-
-		if (lineScale != 1)
-		{
-			splash.centerOrigin();
-			splash.scale.x *= lineScale;
-			splash.scale.y *= lineScale;
-			splash.lineScale = lineScale;
-			if (strum != null)
-			{
-				splash.offset.x += (strum.width / lineScale - strum.width) / 2;
-				splash.offset.y += (strum.height / lineScale - strum.height) / 2;
-			}
-		}
 	}
 
 	public function strumPlayAnim(isDad:Bool, id:Int, time:Float, ?lineID:Int):Void

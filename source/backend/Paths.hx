@@ -42,7 +42,7 @@ class Paths
 		for (key in currentTrackedAssets.keys())
 		{
 			// if it is not currently contained within the used local assets
-			if (!localTrackedAssets.contains(key) && !dumpExclusions.contains(key))
+			if (!_localTrackedSet.exists(key) && !dumpExclusions.contains(key))
 			{
 				destroyGraphic(currentTrackedAssets.get(key)); // get rid of the graphic
 				currentTrackedAssets.remove(key); // and remove the key from local cache map
@@ -55,6 +55,16 @@ class Paths
 
 	// define the locally tracked assets
 	public static var localTrackedAssets:Array<String> = [];
+	static var _localTrackedSet:Map<String, Bool> = [];
+
+	public static inline function trackAsset(key:String):Void
+	{
+		if (!_localTrackedSet.exists(key))
+		{
+			_localTrackedSet.set(key, true);
+			trackAsset(key);
+		}
+	}
 
 	@:access(flixel.system.frontEnds.BitmapFrontEnd._cache)
 	public static function clearStoredMemory()
@@ -77,6 +87,7 @@ class Paths
 		}
 		// flags everything to be cleared out next unused memory clear
 		localTrackedAssets = [];
+		_localTrackedSet.clear();
 		#if !html5 openfl.Assets.cache.clear("songs"); #end
 	}
 
@@ -232,7 +243,7 @@ class Paths
 		var bitmap:BitmapData = null;
 		if (currentTrackedAssets.exists(key))
 		{
-			localTrackedAssets.push(key);
+			trackAsset(key);
 			return currentTrackedAssets.get(key);
 		}
 		return cacheBitmap(key, parentFolder, bitmap, allowGPU);
@@ -276,7 +287,7 @@ class Paths
 		graph.destroyOnNoUse = false;
 
 		currentTrackedAssets.set(key, graph);
-		localTrackedAssets.push(key);
+		trackAsset(key);
 		return graph;
 	}
 
